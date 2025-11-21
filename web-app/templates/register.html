@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Güvenli Biyometrik Kayıt</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio"></script>
+    <script>
+        const originalWarn = console.warn;
+        console.warn = function(...args) {
+            if (args[0] && typeof args[0] === 'string' && args[0].includes('cdn.tailwindcss.com')) {
+                return; // Tailwind uyarısını yoksay
+            }
+            originalWarn.apply(console, args);
+        };
+        
+        tailwind.config = {
+            theme: {
+                extend: {}
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* Slate 900 */
+            color: #e2e8f0;
+        }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+        }
+        /* MonkeyType stili imleç ve font */
+        .typing-area {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.5rem;
+            line-height: 2rem;
+            user-select: none;
+        }
+        .letter {
+            color: #64748b; /* Pasif renk */
+            position: relative;
+        }
+        .letter.correct {
+            color: #e2e8f0; /* Doğru renk */
+        }
+        .letter.incorrect {
+            color: #ef4444; /* Hata rengi */
+        }
+        .letter.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 2px;
+            height: 100%;
+            background-color: #38bdf8; /* İmleç rengi */
+            animation: blink 1s infinite;
+        }
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body class="h-screen w-full flex items-center justify-center overflow-hidden relative">
+
+    <div class="absolute top-0 left-0 w-96 h-96 bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
+    <div class="absolute bottom-0 right-0 w-96 h-96 bg-purple-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
+
+    <div class="glass-panel w-full max-w-4xl p-8 rounded-2xl z-10 relative transition-all duration-500" id="mainContainer">
+        
+        <div id="step1" class="w-full max-w-md mx-auto">
+            <h2 class="text-3xl font-bold text-center mb-2 text-white">Hesap Oluştur</h2>
+            <p class="text-center text-slate-400 mb-8 text-sm">Güvenliğiniz için biyometrik profil oluşturulacaktır.</p>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Kullanıcı Adı</label>
+                    <input type="text" id="username" class="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors text-white placeholder-slate-600" placeholder="johndoe">
+                </div>
+                <div>
+                    <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">E-Posta</label>
+                    <input type="email" id="email" class="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors text-white placeholder-slate-600" placeholder="john@example.com">
+                </div>
+                <button onclick="goToStep2()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-lg transition-all shadow-lg shadow-blue-500/30 mt-4">
+                    Biyometrik Doğrulamaya Geç
+                </button>
+            </div>
+        </div>
+
+        <div id="step2" class="hidden w-full">
+            <div class="text-center mb-6">
+                <h3 class="text-xl font-semibold text-white">Yazım Analizi</h3>
+                <p class="text-slate-400 text-sm">Aşağıdaki metni lütfen doğal hızınızda yazın.</p>
+            </div>
+
+            <div id="textDisplay" class="typing-area mb-8 text-justify break-words p-4 bg-slate-800/30 rounded-xl border border-slate-700/50 min-h-[150px]" onclick="focusInput()">
+                <span class="text-slate-500">Metin Yükleniyor...</span>
+            </div>
+
+            <input type="text" id="hiddenInput" class="absolute opacity-0 top-0 left-0" autocomplete="off">
+
+            <div class="flex justify-between items-center mt-4">
+                <button onclick="resetTest()" class="text-slate-400 hover:text-white text-sm flex items-center gap-2 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+                    Yenile
+                </button>
+                <button id="completeBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-lg font-semibold opacity-50 cursor-not-allowed transition-all" disabled onclick="finishRegistration()">
+                    Kaydı Tamamla
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Değişkenler ---
+        let targetText = "";
+        let currentIndex = 0;
+        let keystrokeData = []; // {key, code, event_type, timestamp}
+        let startTime = null;
+        
+        // --- DOM Elementleri ---
+        const step1 = document.getElementById('step1');
+        const step2 = document.getElementById('step2');
+        const textDisplay = document.getElementById('textDisplay');
+        const hiddenInput = document.getElementById('hiddenInput');
+        const completeBtn = document.getElementById('completeBtn');
+
+        // --- Adım Geçişleri ---
+        async function goToStep2() {
+            const username = document.getElementById('username').value;
+            if(!username) return alert("Lütfen kullanıcı adı girin.");
+
+            // Animasyonlu geçiş
+            step1.classList.add('opacity-0', 'translate-x-[-20px]');
+            setTimeout(async () => {
+                step1.classList.add('hidden');
+                step2.classList.remove('hidden');
+                
+                // Metni Getir
+                await fetchText();
+                
+                step2.classList.add('animate-fadeIn'); // Basit bir CSS animasyonu eklenebilir
+            }, 300);
+        }
+
+        // --- Metin Getirme (Gemini API Simülasyonu) ---
+        async function fetchText() {
+            textDisplay.innerHTML = '<span class="text-blue-400 animate-pulse">Metin Gemini\'den alınıyor...</span>';
+            
+            try {
+                const res = await fetch('/api/get-text');
+                const data = await res.json();
+                targetText = data.text;
+                renderText();
+                focusInput();
+            } catch (err) {
+                textDisplay.innerHTML = "Hata oluştu. Lütfen sayfayı yenileyin.";
+            }
+        }
+
+        // --- Metni Ekrana Basma ---
+        function renderText() {
+            textDisplay.innerHTML = '';
+            targetText.split('').forEach(char => {
+                const span = document.createElement('span');
+                span.innerText = char;
+                span.className = 'letter';
+                textDisplay.appendChild(span);
+            });
+            // İlk harfi aktif yap
+            updateActiveLetter();
+        }
+
+        function updateActiveLetter() {
+            const letters = document.querySelectorAll('.letter');
+            letters.forEach(l => l.classList.remove('active'));
+            if (currentIndex < letters.length) {
+                letters[currentIndex].classList.add('active');
+            }
+        }
+
+        function focusInput() {
+            hiddenInput.focus();
+        }
+
+        // --- Tuş Dinamiklerini Yakalama ---
+        hiddenInput.addEventListener('keydown', (e) => {
+            // Özel tuşları yoksay (Shift, Alt vs tek başına basılınca) ama kombinasyonları engelleme
+            if (e.key === "Shift" || e.key === "Control" || e.key === "Alt") return;
+
+            // Veri Kaydı
+            keystrokeData.push({
+                key: e.key,
+                code: e.code,
+                event_type: 'keydown',
+                timestamp: performance.now() // Yüksek hassasiyetli zaman damgası
+            });
+
+            // Backspace Mantığı
+            if (e.key === "Backspace") {
+                if (currentIndex > 0) {
+                    currentIndex--;
+                    const letters = document.querySelectorAll('.letter');
+                    letters[currentIndex].className = 'letter'; // Durumu sıfırla
+                    updateActiveLetter();
+                }
+                return;
+            }
+
+            // Yazım Mantığı
+            const letters = document.querySelectorAll('.letter');
+            if (currentIndex < targetText.length) {
+                const expectedChar = targetText[currentIndex];
+                
+                // Ekranda görselleştirme
+                if (e.key === expectedChar) {
+                    letters[currentIndex].classList.add('correct');
+                } else {
+                    letters[currentIndex].classList.add('incorrect');
+                }
+                
+                currentIndex++;
+                updateActiveLetter();
+
+                // Metin bitti mi?
+                if (currentIndex === targetText.length) {
+                    completeBtn.disabled = false;
+                    completeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    completeBtn.focus();
+                }
+            }
+        });
+
+        hiddenInput.addEventListener('keyup', (e) => {
+            keystrokeData.push({
+                key: e.key,
+                code: e.code,
+                event_type: 'keyup',
+                timestamp: performance.now()
+            });
+        });
+
+        // --- Kaydı Tamamla ---
+        async function finishRegistration() {
+            const payload = {
+                username: document.getElementById('username').value,
+                email: document.getElementById('email').value,
+                keystrokes: keystrokeData
+            };
+
+            const res = await fetch('/api/register', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+
+            const result = await res.json();
+            if(result.status === 'success') {
+                alert("Kayıt Başarılı! Veriler model eğitimi için gönderildi.");
+                location.reload();
+            }
+        }
+
+        function resetTest() {
+            currentIndex = 0;
+            keystrokeData = [];
+            renderText();
+            hiddenInput.value = '';
+            hiddenInput.focus();
+            completeBtn.disabled = true;
+            completeBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+        
+        // Sayfa tıklandığında inputa odaklan (Kullanıcı deneyimi için)
+        document.addEventListener('click', function(e) {
+             if(step2.classList.contains('hidden') === false && e.target.id !== 'completeBtn') {
+                 hiddenInput.focus();
+             }
+        });
+    </script>
+</body>
+</html>
