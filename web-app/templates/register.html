@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Güvenli Biyometrik Kayıt</title>
+    <title>Keystroke Dynamics - Biometric Authentication</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script>
         const originalWarn = console.warn;
         console.warn = function(...args) {
@@ -20,99 +21,423 @@
             }
         }
     </script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
     
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #0f172a; /* Slate 900 */
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #0f1419 100%);
             color: #e2e8f0;
-        }
-        .glass-panel {
-            background: rgba(30, 41, 59, 0.7);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
-        }
-        /* MonkeyType stili imleç ve font */
-        .typing-area {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 1.5rem;
-            line-height: 2rem;
-            user-select: none;
-        }
-        .letter {
-            color: #64748b; /* Pasif renk */
+            overflow-x: hidden;
             position: relative;
         }
+        
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(circle at 20% 50%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(168, 85, 247, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 40% 20%, rgba(16, 185, 129, 0.1) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(24px) saturate(180%);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 
+                0 8px 32px rgba(0, 0, 0, 0.4),
+                inset 0 1px 1px rgba(255, 255, 255, 0.05);
+            position: relative;
+        }
+        
+        .glass-panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, 
+                transparent 0%,
+                rgba(59, 130, 246, 0.5) 30%,
+                rgba(168, 85, 247, 0.5) 70%,
+                transparent 100%);
+        }
+        
+        .typing-area {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.4rem;
+            line-height: 2.2rem;
+            user-select: none;
+            letter-spacing: 0.02em;
+        }
+        
+        .letter {
+            color: #475569;
+            position: relative;
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
         .letter.correct {
-            color: #e2e8f0; /* Doğru renk */
+            color: #f1f5f9;
+            text-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
         }
+        
         .letter.incorrect {
-            color: #ef4444; /* Hata rengi */
+            color: #ef4444;
+            animation: shake 0.3s;
+            text-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
         }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-3px); }
+            75% { transform: translateX(3px); }
+        }
+        
         .letter.active::before {
             content: '';
             position: absolute;
-            left: 0;
-            bottom: 0;
-            width: 2px;
-            height: 100%;
-            background-color: #38bdf8; /* İmleç rengi */
-            animation: blink 1s infinite;
+            left: -2px;
+            bottom: -4px;
+            width: 3px;
+            height: calc(100% + 8px);
+            background: linear-gradient(180deg, #3b82f6 0%, #8b5cf6 100%);
+            border-radius: 2px;
+            animation: blink 1.2s ease-in-out infinite;
+            box-shadow: 0 0 12px rgba(59, 130, 246, 0.6);
         }
+        
         @keyframes blink {
-            50% { opacity: 0; }
+            0%, 49% { opacity: 1; }
+            50%, 100% { opacity: 0; }
         }
+        
+        @keyframes blob {
+            0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+            33% { transform: translate(40px, -60px) scale(1.15) rotate(120deg); }
+            66% { transform: translate(-30px, 30px) scale(0.95) rotate(240deg); }
+        }
+        
+        .animate-blob {
+            animation: blob 12s infinite;
+        }
+        
+        .animation-delay-2000 {
+            animation-delay: 2s;
+        }
+        
+        .animation-delay-4000 {
+            animation-delay: 4s;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.6) 0%, rgba(15, 23, 42, 0.8) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(12px);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.1), transparent);
+            transition: left 0.5s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-4px) scale(1.02);
+            border-color: rgba(59, 130, 246, 0.4);
+            box-shadow: 
+                0 12px 24px rgba(0, 0, 0, 0.3),
+                0 0 24px rgba(59, 130, 246, 0.2);
+        }
+        
+        .stat-card:hover::before {
+            left: 100%;
+        }
+        
+        .progress-bar {
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+        }
+        
+        .glow-text {
+            text-shadow: 0 0 20px currentColor;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        .logo {
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 900;
+            font-size: 2rem;
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.02em;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .btn-primary::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+        
+        .btn-primary:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+        
+        .particle {
+            position: fixed;
+            width: 4px;
+            height: 4px;
+            background: rgba(59, 130, 246, 0.6);
+            border-radius: 50%;
+            pointer-events: none;
+            animation: particle-float 3s linear infinite;
+        }
+        
+        @keyframes particle-float {
+            0% {
+                transform: translateY(100vh) translateX(0) scale(0);
+                opacity: 0;
+            }
+            10% {
+                opacity: 1;
+            }
+            90% {
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(-100px) translateX(100px) scale(1);
+                opacity: 0;
+            }
+        }
+        
         .hidden { display: none; }
+        
+        .pulse-ring {
+            animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        
+        @keyframes pulse-ring {
+            0%, 100% {
+                opacity: 0.3;
+                transform: scale(0.95);
+            }
+            50% {
+                opacity: 0.6;
+                transform: scale(1.05);
+            }
+        }
+        
+        @keyframes shimmer {
+            0% {
+                transform: translateX(-100%);
+            }
+            100% {
+                transform: translateX(100%);
+            }
+        }
+        
+        .animate-shimmer {
+            animation: shimmer 2s infinite;
+        }
     </style>
 </head>
-<body class="h-screen w-full flex items-center justify-center overflow-hidden relative">
+<body class="min-h-screen w-full flex flex-col items-center justify-center overflow-hidden relative py-8">
 
-    <div class="absolute top-0 left-0 w-96 h-96 bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
-    <div class="absolute bottom-0 right-0 w-96 h-96 bg-purple-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
+    <!-- Animated Background Orbs -->
+    <div class="absolute top-0 left-0 w-96 h-96 bg-blue-500 rounded-full mix-blend-screen filter blur-3xl opacity-20 animate-blob"></div>
+    <div class="absolute top-0 right-0 w-96 h-96 bg-purple-500 rounded-full mix-blend-screen filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
+    <div class="absolute bottom-0 left-1/2 w-96 h-96 bg-pink-500 rounded-full mix-blend-screen filter blur-3xl opacity-20 animate-blob animation-delay-4000"></div>
+    
+    <!-- Particles -->
+    <div id="particles-container"></div>
+    
+    <!-- Logo Header -->
+    <div class="mb-8 text-center z-10">
+        <div class="logo mb-2 flex items-center justify-center gap-3">
+            <i class="fas fa-fingerprint"></i>
+            <span>KEYSTROKE DYNAMICS</span>
+        </div>
+        <p class="text-slate-400 text-sm tracking-wider uppercase">Advanced Biometric Authentication System</p>
+    </div>
 
-    <div class="glass-panel w-full max-w-4xl p-8 rounded-2xl z-10 relative transition-all duration-500" id="mainContainer">
+    <div class="glass-panel w-full max-w-5xl p-10 rounded-3xl z-10 relative transition-all duration-500" id="mainContainer">
         
         <div id="step1" class="w-full max-w-md mx-auto">
-            <h2 class="text-3xl font-bold text-center mb-2 text-white">Hesap Oluştur</h2>
-            <p class="text-center text-slate-400 mb-8 text-sm">Güvenliğiniz için biyometrik profil oluşturulacaktır.</p>
+            <div class="text-center mb-8">
+                <div class="inline-block p-4 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-2xl mb-4">
+                    <i class="fas fa-user-shield text-5xl text-blue-400"></i>
+                </div>
+                <h2 class="text-4xl font-bold text-center mb-3 bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                    Hesap Oluştur
+                </h2>
+                <p class="text-center text-slate-400 text-sm">
+                    <i class="fas fa-shield-alt text-emerald-400 mr-2"></i>
+                    Gelişmiş biyometrik profil oluşturulacak
+                </p>
+            </div>
             
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">Kullanıcı Adı</label>
-                    <input type="text" id="username" class="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors text-white placeholder-slate-600" placeholder="johndoe">
+            <div class="space-y-5">
+                <div class="relative">
+                    <label class="block text-xs uppercase tracking-wider font-semibold text-slate-400 mb-2 flex items-center gap-2">
+                        <i class="fas fa-user text-blue-400"></i>
+                        Kullanıcı Adı
+                    </label>
+                    <input type="text" id="username" class="w-full bg-slate-800/50 border border-slate-700 rounded-xl px-5 py-4 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-white placeholder-slate-500 text-lg" placeholder="johndoe">
                 </div>
-                <div>
-                    <label class="block text-xs uppercase tracking-wider text-slate-500 mb-1">E-Posta</label>
-                    <input type="email" id="email" class="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors text-white placeholder-slate-600" placeholder="john@example.com">
+                <div class="relative">
+                    <label class="block text-xs uppercase tracking-wider font-semibold text-slate-400 mb-2 flex items-center gap-2">
+                        <i class="fas fa-envelope text-purple-400"></i>
+                        E-Posta
+                    </label>
+                    <input type="email" id="email" class="w-full bg-slate-800/50 border border-slate-700 rounded-xl px-5 py-4 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all text-white placeholder-slate-500 text-lg" placeholder="john@example.com">
                 </div>
-                <button onclick="goToStep2()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-lg transition-all shadow-lg shadow-blue-500/30 mt-4">
-                    Biyometrik Doğrulamaya Geç
+                <button onclick="goToStep2()" class="w-full btn-primary text-white font-bold py-4 rounded-xl transition-all shadow-xl shadow-blue-500/30 mt-6 text-lg relative z-10 flex items-center justify-center gap-3">
+                    <span>Biyometrik Analiz Başlat</span>
+                    <i class="fas fa-arrow-right"></i>
                 </button>
             </div>
         </div>
 
         <div id="step2" class="hidden w-full">
             <div class="text-center mb-6">
-                <h3 class="text-xl font-semibold text-white">Yazım Analizi</h3>
-                <p class="text-slate-400 text-sm">Aşağıdaki metni lütfen doğal hızınızda yazın.</p>
+                <h3 class="text-3xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-2 flex items-center justify-center gap-3">
+                    <i class="fas fa-brain"></i>
+                    Klavye Dinamikleri Analizi
+                </h3>
+                
+                <div class="w-full bg-slate-800/50 rounded-full h-3 mb-2 relative overflow-hidden border border-slate-700">
+                    <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent animate-shimmer"></div>
+                    <div id="progressBar" class="progress-bar bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 h-full rounded-full relative z-10" style="width: 0%"></div>
+                </div>
+                <p class="text-sm text-slate-400 font-mono">
+                    <span id="progressText" class="text-blue-400 font-bold">0</span>
+                    <span class="mx-1">/</span>
+                    <span id="totalChars" class="text-purple-400 font-bold">0</span>
+                    <span class="ml-2 text-slate-500">karakterler</span>
+                </p>
             </div>
 
-            <div id="textDisplay" class="typing-area mb-8 text-justify break-words p-4 bg-slate-800/30 rounded-xl border border-slate-700/50 min-h-[150px]" onclick="focusInput()">
-                <span class="text-slate-500">Metin Yükleniyor...</span>
+            <div class="grid grid-cols-4 gap-4 mb-8">
+                <div class="stat-card rounded-2xl p-5 text-center relative group">
+                    <div class="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div class="relative z-10">
+                        <div class="flex items-center justify-center gap-2 text-xs text-slate-400 mb-2 uppercase tracking-wider font-semibold">
+                            <i class="fas fa-tachometer-alt text-blue-400"></i>
+                            <span>WPM</span>
+                        </div>
+                        <div id="wpmDisplay" class="text-4xl font-bold text-blue-400 glow-text font-mono">0</div>
+                        <div class="text-xs text-slate-500 mt-1">kelime/dakika</div>
+                    </div>
+                </div>
+                <div class="stat-card rounded-2xl p-5 text-center relative group">
+                    <div class="absolute inset-0 bg-gradient-to-br from-green-500/10 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div class="relative z-10">
+                        <div class="flex items-center justify-center gap-2 text-xs text-slate-400 mb-2 uppercase tracking-wider font-semibold">
+                            <i class="fas fa-bullseye text-green-400"></i>
+                            <span>Doğruluk</span>
+                        </div>
+                        <div id="accuracyDisplay" class="text-4xl font-bold text-green-400 glow-text font-mono">100%</div>
+                        <div class="text-xs text-slate-500 mt-1">doğruluk oranı</div>
+                    </div>
+                </div>
+                <div class="stat-card rounded-2xl p-5 text-center relative group">
+                    <div class="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div class="relative z-10">
+                        <div class="flex items-center justify-center gap-2 text-xs text-slate-400 mb-2 uppercase tracking-wider font-semibold">
+                            <i class="fas fa-stopwatch text-purple-400"></i>
+                            <span>Süre</span>
+                        </div>
+                        <div id="timeDisplay" class="text-4xl font-bold text-purple-400 glow-text font-mono">0s</div>
+                        <div class="text-xs text-slate-500 mt-1">geçen zaman</div>
+                    </div>
+                </div>
+                <div class="stat-card rounded-2xl p-5 text-center relative group">
+                    <div class="absolute inset-0 bg-gradient-to-br from-orange-500/10 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div class="relative z-10">
+                        <div class="flex items-center justify-center gap-2 text-xs text-slate-400 mb-2 uppercase tracking-wider font-semibold">
+                            <i class="fas fa-keyboard text-orange-400"></i>
+                            <span>Tuşlar</span>
+                        </div>
+                        <div id="keystrokeDisplay" class="text-4xl font-bold text-orange-400 glow-text font-mono">0</div>
+                        <div class="text-xs text-slate-500 mt-1">tuş vuruşu</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="textDisplay" class="typing-area mb-8 text-justify break-words p-8 bg-gradient-to-br from-slate-800/40 to-slate-900/40 rounded-2xl border border-slate-700/50 min-h-[200px] shadow-2xl backdrop-blur-sm relative overflow-hidden" onclick="focusInput()">
+                <div class="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5"></div>
+                <span class="text-slate-500 relative z-10">
+                    <i class="fas fa-spinner fa-spin mr-2"></i>
+                    Metin yükleniyor...
+                </span>
             </div>
 
             <input type="text" id="hiddenInput" class="absolute opacity-0 top-0 left-0" autocomplete="off">
 
-            <div class="flex justify-between items-center mt-4">
-                <button onclick="resetTest()" class="text-slate-400 hover:text-white text-sm flex items-center gap-2 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
-                    Yenile
+            <div class="flex justify-between items-center mt-6">
+                <button onclick="resetTest()" class="text-slate-400 hover:text-white text-base flex items-center gap-3 transition-all hover:scale-105 px-6 py-3 rounded-xl hover:bg-slate-800/50">
+                    <i class="fas fa-redo-alt"></i>
+                    <span class="font-semibold">Yeniden Başlat</span>
                 </button>
-                <button id="completeBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-lg font-semibold opacity-50 cursor-not-allowed transition-all" disabled onclick="finishRegistration()">
-                    Kaydı Tamamla
+                <button id="completeBtn" class="btn-success text-white px-10 py-4 rounded-xl font-bold opacity-50 cursor-not-allowed transition-all shadow-2xl text-lg relative z-10" disabled onclick="finishRegistration()">
+                    <span class="flex items-center gap-3 relative z-10">
+                        <i class="fas fa-check-circle"></i>
+                        <span>Kaydı Tamamla</span>
+                        <i class="fas fa-arrow-right"></i>
+                    </span>
                 </button>
             </div>
         </div>
@@ -123,15 +448,28 @@
         // --- Değişkenler ---
         let targetText = "";
         let currentIndex = 0;
-        let keystrokeData = []; // {key, code, event_type, timestamp}
+        let keystrokeData = []; // {key, code, event_type, timestamp, is_correct, is_backspace, shift_pressed}
         let startTime = null;
+        let shiftPressed = false;
+        let ctrlPressed = false;
+        let altPressed = false;
+        let incorrectKeyCount = 0;
+        let correctKeyCount = 0;
+        let testStartTime = null;
+        let timerInterval = null;
         
-        // --- DOM Elementleri ---
         const step1 = document.getElementById('step1');
         const step2 = document.getElementById('step2');
         const textDisplay = document.getElementById('textDisplay');
         const hiddenInput = document.getElementById('hiddenInput');
         const completeBtn = document.getElementById('completeBtn');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        const totalChars = document.getElementById('totalChars');
+        const wpmDisplay = document.getElementById('wpmDisplay');
+        const accuracyDisplay = document.getElementById('accuracyDisplay');
+        const timeDisplay = document.getElementById('timeDisplay');
+        const keystrokeDisplay = document.getElementById('keystrokeDisplay');
 
         // --- Adım Geçişleri ---
         async function goToStep2() {
@@ -175,8 +513,9 @@
                 span.className = 'letter';
                 textDisplay.appendChild(span);
             });
-            // İlk harfi aktif yap
+            totalChars.textContent = targetText.length;
             updateActiveLetter();
+            updateStats();
         }
 
         function updateActiveLetter() {
@@ -191,37 +530,148 @@
             hiddenInput.focus();
         }
 
+        function updateStats() {
+            const progress = targetText.length > 0 ? (currentIndex / targetText.length) * 100 : 0;
+            progressBar.style.width = progress + '%';
+            progressText.textContent = currentIndex;
+            
+            const totalPresses = correctKeyCount + incorrectKeyCount;
+            const accuracy = totalPresses > 0 ? (correctKeyCount / totalPresses) * 100 : 100;
+            accuracyDisplay.textContent = accuracy.toFixed(1) + '%';
+            
+            if (accuracy >= 95) {
+                accuracyDisplay.classList.add('text-green-400');
+                accuracyDisplay.classList.remove('text-yellow-400', 'text-red-400');
+            } else if (accuracy >= 80) {
+                accuracyDisplay.classList.add('text-yellow-400');
+                accuracyDisplay.classList.remove('text-green-400', 'text-red-400');
+            } else {
+                accuracyDisplay.classList.add('text-red-400');
+                accuracyDisplay.classList.remove('text-green-400', 'text-yellow-400');
+            }
+            
+            const realKeystrokes = keystrokeData.filter(k => 
+                k.event_type === 'keydown' && 
+                !k.is_modifier && 
+                k.key !== 'Backspace'
+            ).length;
+            keystrokeDisplay.textContent = realKeystrokes;
+            
+            if (testStartTime) {
+                const elapsedSeconds = (performance.now() - testStartTime) / 1000;
+                const words = currentIndex / 5;
+                const wpm = elapsedSeconds > 0 ? Math.round((words / elapsedSeconds) * 60) : 0;
+                wpmDisplay.textContent = wpm;
+                
+                if (wpm >= 60) {
+                    wpmDisplay.classList.add('text-green-400');
+                    wpmDisplay.classList.remove('text-blue-400', 'text-yellow-400');
+                } else if (wpm >= 40) {
+                    wpmDisplay.classList.add('text-yellow-400');
+                    wpmDisplay.classList.remove('text-blue-400', 'text-green-400');
+                } else {
+                    wpmDisplay.classList.add('text-blue-400');
+                    wpmDisplay.classList.remove('text-yellow-400', 'text-green-400');
+                }
+            }
+        }
+
+        function startTimer() {
+            if (!testStartTime) {
+                testStartTime = performance.now();
+                timerInterval = setInterval(() => {
+                    const elapsed = Math.floor((performance.now() - testStartTime) / 1000);
+                    timeDisplay.textContent = elapsed + 's';
+                }, 1000);
+            }
+        }
+
+        function stopTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+
         // --- Tuş Dinamiklerini Yakalama ---
         hiddenInput.addEventListener('keydown', (e) => {
-            // Özel tuşları yoksay (Shift, Alt vs tek başına basılınca) ama kombinasyonları engelleme
-            if (e.key === "Shift" || e.key === "Control" || e.key === "Alt") return;
+            // Modifier tuşları takip et
+            if (e.key === "Shift") {
+                shiftPressed = true;
+                keystrokeData.push({
+                    key: e.key,
+                    code: e.code,
+                    event_type: 'keydown',
+                    timestamp: performance.now(),
+                    is_modifier: true
+                });
+                return;
+            }
+            if (e.key === "Control") {
+                ctrlPressed = true;
+                return;
+            }
+            if (e.key === "Alt") {
+                altPressed = true;
+                return;
+            }
 
-            // Veri Kaydı
-            keystrokeData.push({
-                key: e.key,
-                code: e.code,
-                event_type: 'keydown',
-                timestamp: performance.now() // Yüksek hassasiyetli zaman damgası
-            });
-
+            const letters = document.querySelectorAll('.letter');
+            const expectedChar = currentIndex < targetText.length ? targetText[currentIndex] : null;
+            
             // Backspace Mantığı
             if (e.key === "Backspace") {
+                keystrokeData.push({
+                    key: e.key,
+                    code: e.code,
+                    event_type: 'keydown',
+                    timestamp: performance.now(),
+                    is_backspace: true,
+                    is_correct: false,
+                    shift_pressed: shiftPressed,
+                    position: currentIndex
+                });
+                
                 if (currentIndex > 0) {
                     currentIndex--;
-                    const letters = document.querySelectorAll('.letter');
-                    letters[currentIndex].className = 'letter'; // Durumu sıfırla
+                    letters[currentIndex].className = 'letter';
                     updateActiveLetter();
+                    updateStats();
                 }
                 return;
             }
 
-            // Yazım Mantığı
-            const letters = document.querySelectorAll('.letter');
+            startTimer();
+
+            // Normal tuş - doğruluk kontrolü yap
+            const isCorrect = e.key === expectedChar;
+            
+            // Veri Kaydı - GELİŞMİŞ
+            keystrokeData.push({
+                key: e.key,
+                code: e.code,
+                event_type: 'keydown',
+                timestamp: performance.now(),
+                is_correct: isCorrect,
+                is_backspace: false,
+                shift_pressed: shiftPressed,
+                ctrl_pressed: ctrlPressed,
+                alt_pressed: altPressed,
+                expected_char: expectedChar,
+                position: currentIndex
+            });
+
+            // İstatistik güncelle
+            startTimer();
+            
+            if (isCorrect) {
+                correctKeyCount++;
+            } else {
+                incorrectKeyCount++;
+            }
+
             if (currentIndex < targetText.length) {
-                const expectedChar = targetText[currentIndex];
-                
-                // Ekranda görselleştirme
-                if (e.key === expectedChar) {
+                if (isCorrect) {
                     letters[currentIndex].classList.add('correct');
                 } else {
                     letters[currentIndex].classList.add('incorrect');
@@ -229,31 +679,68 @@
                 
                 currentIndex++;
                 updateActiveLetter();
+                updateStats();
 
-                // Metin bitti mi?
                 if (currentIndex === targetText.length) {
+                    stopTimer();
                     completeBtn.disabled = false;
                     completeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    completeBtn.classList.add('scale-105', 'shadow-emerald-500/50');
                     completeBtn.focus();
                 }
             }
         });
 
         hiddenInput.addEventListener('keyup', (e) => {
+            // Modifier tuşları takip et
+            if (e.key === "Shift") {
+                shiftPressed = false;
+                keystrokeData.push({
+                    key: e.key,
+                    code: e.code,
+                    event_type: 'keyup',
+                    timestamp: performance.now(),
+                    is_modifier: true
+                });
+                return;
+            }
+            if (e.key === "Control") {
+                ctrlPressed = false;
+                return;
+            }
+            if (e.key === "Alt") {
+                altPressed = false;
+                return;
+            }
+
+            // Normal tuş keyup
             keystrokeData.push({
                 key: e.key,
                 code: e.code,
                 event_type: 'keyup',
-                timestamp: performance.now()
+                timestamp: performance.now(),
+                shift_pressed: shiftPressed,
+                position: currentIndex
             });
         });
 
         // --- Kaydı Tamamla ---
         async function finishRegistration() {
+            // Doğruluk oranını hesapla
+            const totalKeyPresses = correctKeyCount + incorrectKeyCount;
+            const accuracyRate = totalKeyPresses > 0 ? (correctKeyCount / totalKeyPresses) * 100 : 0;
+            
             const payload = {
                 username: document.getElementById('username').value,
                 email: document.getElementById('email').value,
-                keystrokes: keystrokeData
+                keystrokes: keystrokeData,
+                metadata: {
+                    correct_keys: correctKeyCount,
+                    incorrect_keys: incorrectKeyCount,
+                    accuracy_rate: accuracyRate,
+                    target_text: targetText,
+                    total_keystrokes: keystrokeData.length
+                }
             };
 
             const res = await fetch('/api/register', {
@@ -264,27 +751,85 @@
 
             const result = await res.json();
             if(result.status === 'success') {
-                alert("Kayıt Başarılı! Veriler model eğitimi için gönderildi.");
-                location.reload();
+                const wpm = parseInt(wpmDisplay.textContent);
+                const time = timeDisplay.textContent;
+                
+                completeBtn.innerHTML = `<span class="flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    Başarılı!
+                </span>`;
+                
+                setTimeout(() => {
+                    alert(`🎉 Kayıt Başarıyla Tamamlandı!\n\n` +
+                          `📊 Performans Özeti:\n` +
+                          `• Doğruluk Oranı: ${accuracyRate.toFixed(1)}%\n` +
+                          `• Yazma Hızı: ${wpm} WPM\n` +
+                          `• Süre: ${time}\n` +
+                          `• Toplam Tuş: ${totalKeyPresses}\n\n` +
+                          `✅ ${result.keystroke_count} biometrik özellik kaydedildi.`);
+                    location.reload();
+                }, 500);
+            } else {
+                alert("❌ Hata: " + (result.detail || "Kayıt başarısız"));
             }
         }
 
         function resetTest() {
             currentIndex = 0;
             keystrokeData = [];
+            shiftPressed = false;
+            ctrlPressed = false;
+            altPressed = false;
+            incorrectKeyCount = 0;
+            correctKeyCount = 0;
+            testStartTime = null;
+            stopTimer();
+            timeDisplay.textContent = '0s';
             renderText();
             hiddenInput.value = '';
             hiddenInput.focus();
             completeBtn.disabled = true;
             completeBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            completeBtn.classList.remove('scale-105', 'shadow-emerald-500/50');
         }
         
-        // Sayfa tıklandığında inputa odaklan (Kullanıcı deneyimi için)
         document.addEventListener('click', function(e) {
              if(step2.classList.contains('hidden') === false && e.target.id !== 'completeBtn') {
                  hiddenInput.focus();
              }
         });
+        
+        function createParticles() {
+            const container = document.getElementById('particles-container');
+            const particleCount = 20;
+            
+            for (let i = 0; i < particleCount; i++) {
+                setTimeout(() => {
+                    const particle = document.createElement('div');
+                    particle.className = 'particle';
+                    particle.style.left = Math.random() * 100 + '%';
+                    particle.style.animationDelay = Math.random() * 3 + 's';
+                    particle.style.animationDuration = (Math.random() * 2 + 2) + 's';
+                    
+                    const colors = [
+                        'rgba(59, 130, 246, 0.6)',
+                        'rgba(168, 85, 247, 0.6)',
+                        'rgba(236, 72, 153, 0.6)',
+                        'rgba(16, 185, 129, 0.6)'
+                    ];
+                    particle.style.background = colors[Math.floor(Math.random() * colors.length)];
+                    
+                    container.appendChild(particle);
+                    
+                    setTimeout(() => {
+                        particle.remove();
+                    }, 3000);
+                }, i * 150);
+            }
+        }
+        
+        setInterval(createParticles, 3000);
+        createParticles();
     </script>
 </body>
 </html>
