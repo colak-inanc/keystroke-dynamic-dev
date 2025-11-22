@@ -11,9 +11,35 @@ from pydantic import BaseModel
 import google.generativeai as genai
 from typing import List
 from dotenv import load_dotenv
+import tensorflow as tf
+import numpy as np
 
 ##load_dotenv()
 app = FastAPI()
+
+BASE_DIR = Path(__file__).parent.parent
+MODEL_PATH = BASE_DIR / "model" / "model-v1.h5"
+model = None
+
+def load_model():
+    global model
+    if model is None:
+        if MODEL_PATH.exists():
+            try:
+                model = tf.keras.models.load_model(str(MODEL_PATH))
+                logging.info(f"Model başarıyla yüklendi: {MODEL_PATH}")
+                
+                try:
+                    model.summary(print_fn=lambda x: logging.info(f"Model: {x}"))
+                    logging.info(f"Model input shape: {model.input_shape}")
+                    logging.info(f"Model output shape: {model.output_shape}")
+                except:
+                    pass
+            except Exception as e:
+                logging.error(f"Model yükleme hatası: {str(e)}")
+        else:
+            logging.warning(f"Model dosyası bulunamadı: {MODEL_PATH}")
+    return model
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
@@ -45,9 +71,17 @@ class RegisterRequest(BaseModel):
     keystrokes: List[KeystrokeData]
     metadata: SessionMetadata = None
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/register", response_class=HTMLResponse)
 async def read_register(request: Request):
     return templates.TemplateResponse("register.html", {"request": request})
+
+@app.get("/", response_class=HTMLResponse)
+async def read_login(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def read_dashboard(request: Request):
+    return templates.TemplateResponse("dashboard.html", {"request": request})
 
 @app.get("/favicon.ico")
 async def favicon():
@@ -68,6 +102,460 @@ async def get_typing_text():
     print("Mock data döndürülüyor")
     return {"text": mock_text}
 
+class LoginRequest(BaseModel):
+    username: str
+    keystrokes: List[KeystrokeData]
+    metadata: SessionMetadata = None
+
+@app.post("/api/login")
+async def login_user(data: LoginRequest):
+    try:
+        from pathlib import Path
+        import pandas as pd
+        
+        user_dir = Path("keystroke_data") / data.username
+        if not user_dir.exists():
+            return {
+                "status": "error",
+                "message": f"Kullanıcı '{data.username}' bulunamadı. Lütfen önce kayıt olun."
+            }
+        loaded_model = load_model()
+
+        if loaded_model is None:
+            logging.warning("Model yüklenemedi, eski similarity yöntemi kullanılıyor")
+            return await login_user_legacy(data)
+        
+        features = extract_keystroke_features(data.keystrokes)
+        sequence_data = prepare_sequence_for_model(data.keystrokes, features)
+        
+        if sequence_data is None or sequence_data.shape != (1, 10, 3):
+            logging.warning(f"Sequence formatı uygun değil: {sequence_data.shape if sequence_data is not None else 'None'}")
+            return await login_user_legacy(data)
+        
+        prediction = loaded_model.predict(sequence_data, verbose=0)
+        logging.info(f"Model prediction shape: {prediction.shape}, Full prediction: {prediction}")
+        
+        raw_output = 0.0
+        if len(prediction.shape) == 1:
+            raw_output = float(prediction[0])
+        elif prediction.shape[1] == 1:
+            raw_output = float(prediction[0][0])
+        elif prediction.shape[1] == 2:
+            raw_output = float(prediction[0][1])
+        else:
+            raw_output = float(np.max(prediction[0]))
+        
+        confidence = max(0.0, min(1.0, raw_output))
+        logging.info(f"Model raw output: {raw_output:.8f}, Confidence: {confidence:.8f} ({confidence*100:.4f}%)")
+        THRESHOLD = 0.7
+        
+        if confidence >= THRESHOLD:
+            logging.info(f"Başarılı giriş (Model): {data.username} (güven: {confidence:.2f})")
+            
+            try:
+                save_login_session(data.username, data.keystrokes, features, confidence, True)
+            except Exception as e:
+                logging.warning(f"Giriş oturumu kaydedilemedi: {str(e)}")
+            
+            return {
+                "status": "success",
+                "username": data.username,
+                "confidence": confidence,
+                "message": "Kimlik doğrulandı"
+            }
+        else:
+            logging.warning(f"Başarısız giriş denemesi (Model): {data.username} (güven: {confidence:.2f})")
+            try:
+                save_login_session(data.username, data.keystrokes, features, confidence, False)
+            except Exception as e:
+                logging.warning(f"Giriş oturumu kaydedilemedi: {str(e)}")
+            return {
+                "status": "error",
+                "message": f"Klavye dinamikleri eşleşmiyor (güven: {confidence*100:.1f}%). Bu hesap size ait olmayabilir!"
+            }
+            
+    except Exception as e:
+        logging.error(f"Login hatası: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Doğrulama hatası: {str(e)}")
+
+
+async def login_user_legacy(data: LoginRequest):
+    from pathlib import Path
+    import pandas as pd
+    import numpy as np
+    
+    user_dir = Path("keystroke_data") / data.username
+    
+    csv_files = list(user_dir.glob("features_*.csv"))
+    if len(csv_files) < 3:
+        return {
+            "status": "error",
+            "message": f"Yeterli eğitim verisi yok. En az 3 oturum gerekli (mevcut: {len(csv_files)})"
+        }
+    
+    features = extract_keystroke_features(data.keystrokes)
+    
+    user_features = []
+    for stat_name, stat_value in features.get("statistics", {}).items():
+        user_features.append(stat_value)
+    
+    for metric_name, metric_value in features.get("rhythm_metrics", {}).items():
+        user_features.append(metric_value)
+    
+    for speed_name, speed_value in features.get("typing_speed", {}).items():
+        user_features.append(speed_value)
+    
+    if len(features["dwell_times"]) > 0:
+        user_features.append(np.mean(features["dwell_times"]))
+        user_features.append(np.std(features["dwell_times"]))
+    
+    if len(features["flight_times"]) > 0:
+        user_features.append(np.mean(features["flight_times"]))
+        user_features.append(np.std(features["flight_times"]))
+    
+    user_features.append(features["backspace_count"])
+    user_features.append(len(features["keys_pressed"]))
+    
+    stored_data = []
+    for csv_file in csv_files[:5]:
+        df = pd.read_csv(csv_file)
+        stats_df = df[df['feature_category'] == 'statistics']
+        if len(stats_df) > 0:
+            stored_data.append(df)
+    
+    if len(stored_data) == 0:
+        return {
+            "status": "error",
+            "message": "Kayıtlı veri formatı uyumsuz"
+        }
+    
+    confidence = calculate_similarity(user_features, stored_data)
+    
+    THRESHOLD = 0.65
+    
+    features = extract_keystroke_features(data.keystrokes)
+    
+    if confidence >= THRESHOLD:
+        logging.info(f"Başarılı giriş (Legacy): {data.username} (güven: {confidence:.2f})")
+        
+        try:
+            save_login_session(data.username, data.keystrokes, features, float(confidence), True)
+        except Exception as e:
+            logging.warning(f"Giriş oturumu kaydedilemedi: {str(e)}")
+        
+        return {
+            "status": "success",
+            "username": data.username,
+            "confidence": float(confidence),
+            "message": "Kimlik doğrulandı"
+        }
+    else:
+        logging.warning(f"Başarısız giriş denemesi (Legacy): {data.username} (güven: {confidence:.2f})")
+        
+        try:
+            save_login_session(data.username, data.keystrokes, features, float(confidence), False)
+        except Exception as e:
+            logging.warning(f"Giriş oturumu kaydedilemedi: {str(e)}")
+        
+        return {
+            "status": "error",
+            "message": f"Klavye dinamikleri eşleşmiyor (güven: {confidence*100:.1f}%). Bu hesap size ait olmayabilir."
+        }
+
+
+def prepare_sequence_for_model(keystrokes: List[KeystrokeData], features: dict) -> np.ndarray:
+    """
+    Keystroke verilerinden model için sequence oluşturur (10, 3) formatında
+    Her zaman adımı için 3 feature: [dwell_time, flight_time, inter_key_delay]
+    """
+    sequence = []
+    keydown_events = {}
+    keyup_events = {}
+    previous_keyup_time = None
+    
+    for idx, event in enumerate(keystrokes):
+        key = event.key
+        event_type = event.event_type
+        timestamp = event.timestamp
+        
+        if event_type == "keydown":
+            keydown_events[key] = timestamp
+            
+            if key == "Backspace" or key == "Shift":
+                continue
+            
+            flight_time = 0.0
+            if previous_keyup_time is not None:
+                flight_time = timestamp - previous_keyup_time
+            
+            inter_key_delay = 0.0
+            if idx > 0:
+                inter_key_delay = timestamp - keystrokes[idx - 1].timestamp
+
+        elif event_type == "keyup":
+            keyup_events[key] = timestamp
+            
+            if key == "Shift" or key == "Backspace":
+                continue
+            
+            dwell_time = 0.0
+            keydown_time = None
+            if key in keydown_events:
+                keydown_time = keydown_events[key]
+                dwell_time = timestamp - keydown_time
+                del keydown_events[key]
+            
+            flight_time = 0.0
+            if previous_keyup_time is not None and keydown_time is not None:
+                flight_time = keydown_time - previous_keyup_time
+            
+            inter_key_delay = 0.0
+            if idx > 0:
+                inter_key_delay = timestamp - keystrokes[idx - 1].timestamp
+            
+            normalized_dwell = min(dwell_time / 500.0, 2.0)
+            normalized_flight = min(flight_time / 500.0, 2.0) if flight_time > 0 else 0.0
+            normalized_delay = min(inter_key_delay / 1000.0, 2.0)
+            
+            sequence.append([
+                float(normalized_dwell),
+                float(normalized_flight),
+                float(normalized_delay)
+            ])
+            
+            previous_keyup_time = timestamp
+    
+    target_length = 10
+    
+    if len(sequence) == 0:
+        sequence = [[0.0, 0.0, 0.0]] * target_length
+    elif len(sequence) < target_length:
+        last_value = sequence[-1] if sequence else [0.0, 0.0, 0.0]
+        while len(sequence) < target_length:
+            sequence.append(last_value.copy())
+    elif len(sequence) > target_length:
+        sequence = sequence[:target_length]
+    
+    for i in range(len(sequence)):
+        for j in range(3):
+            if np.isnan(sequence[i][j]) or np.isinf(sequence[i][j]):
+                sequence[i][j] = 0.0
+    
+    sequence_array = np.array([sequence], dtype=np.float32)
+    
+    return sequence_array
+
+
+def calculate_similarity(user_features, stored_data):
+    import numpy as np
+    
+    if len(user_features) < 5:
+        return 0.0
+    
+    similarities = []
+    
+    for df in stored_data:
+        stats = df[df['feature_category'] == 'statistics']
+        rhythm = df[df['feature_category'] == 'rhythm_metrics']
+        typing = df[df['feature_category'] == 'typing_speed']
+        
+        stored_features = []
+        for _, row in stats.iterrows():
+            stored_features.append(row['value'])
+        for _, row in rhythm.iterrows():
+            stored_features.append(row['value'])
+        for _, row in typing.iterrows():
+            stored_features.append(row['value'])
+        
+        timing_df = df[df['feature_category'] == 'timing']
+        dwell_times = timing_df[timing_df['feature_type'] == 'dwell_time']['value'].values
+        if len(dwell_times) > 0:
+            stored_features.append(np.mean(dwell_times))
+            stored_features.append(np.std(dwell_times))
+        
+        flight_times = timing_df[timing_df['feature_type'] == 'flight_time']['value'].values
+        if len(flight_times) > 0:
+            stored_features.append(np.mean(flight_times))
+            stored_features.append(np.std(flight_times))
+        
+        backspace = df[df['feature_type'] == 'backspace_count']
+        if len(backspace) > 0:
+            stored_features.append(backspace['value'].iloc[0])
+        
+        keys_count = len(timing_df)
+        stored_features.append(keys_count)
+        
+        min_len = min(len(user_features), len(stored_features))
+        if min_len < 5:
+            continue
+        
+        user_arr = np.array(user_features[:min_len])
+        stored_arr = np.array(stored_features[:min_len])
+        
+        user_arr = np.nan_to_num(user_arr, 0)
+        stored_arr = np.nan_to_num(stored_arr, 0)
+        
+        if np.std(user_arr) > 0 and np.std(stored_arr) > 0:
+            user_norm = (user_arr - np.mean(user_arr)) / np.std(user_arr)
+            stored_norm = (stored_arr - np.mean(stored_arr)) / np.std(stored_arr)
+            
+            correlation = np.corrcoef(user_norm, stored_norm)[0, 1]
+            if not np.isnan(correlation):
+                similarities.append((correlation + 1) / 2)
+        
+        distance = np.linalg.norm(user_arr - stored_arr)
+        max_distance = np.linalg.norm(stored_arr) * 2
+        if max_distance > 0:
+            distance_similarity = 1 - min(distance / max_distance, 1)
+            similarities.append(distance_similarity)
+    
+    if len(similarities) == 0:
+        return 0.0
+    
+    return float(np.mean(similarities))
+
+
+def save_login_session(username: str, keystrokes: List[KeystrokeData], features: dict, confidence: float, success: bool):
+    try:
+        data_dir = Path("keystroke_data")
+        user_dir = data_dir / username
+        user_dir.mkdir(exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        raw_data_file = user_dir / f"login_{timestamp}.json"
+        raw_data = {
+            "username": username,
+            "timestamp": timestamp,
+            "session_type": "login",
+            "success": success,
+            "confidence": confidence,
+            "total_keystrokes": len(keystrokes),
+            "keystrokes": [k.dict() for k in keystrokes],
+            "session_metadata": {
+                "accuracy_rate": features.get("typing_speed", {}).get("accuracy_rate", 0.0) * 100,
+                "wpm": features.get("typing_speed", {}).get("words_per_minute", 0.0),
+                "correct_keys": len([k for k in keystrokes if k.event_type == "keydown" and k.key != "Backspace"]),
+                "total_keys": len(keystrokes)
+            }
+        }
+        
+        with open(raw_data_file, 'w', encoding='utf-8') as f:
+            json.dump(raw_data, f, indent=2, ensure_ascii=False)
+        
+        logging.info(f"Giriş oturumu kaydedildi: {username} - {'Başarılı' if success else 'Başarısız'}")
+    except Exception as e:
+        logging.error(f"Giriş oturumu kaydetme hatası: {str(e)}")
+
+
+@app.get("/api/user-stats")
+async def get_user_stats(username: str):
+    try:
+        from pathlib import Path
+        import pandas as pd
+        from collections import defaultdict
+        
+        user_dir = Path("keystroke_data") / username
+        
+        if not user_dir.exists():
+            return {
+                "total_sessions": 0,
+                "avg_accuracy": 0,
+                "avg_wpm": 0,
+                "sessions": [],
+                "accuracy_trend": []
+            }
+        
+        sessions = []
+        accuracy_values = []
+        wpm_values = []
+        
+        json_files = list(user_dir.glob("*.json"))
+        json_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        
+        for json_file in json_files:
+            try:
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                timestamp_str = data.get("timestamp", "")
+                if len(timestamp_str) == 15:
+                    date_str = f"{timestamp_str[0:4]}-{timestamp_str[4:6]}-{timestamp_str[6:8]} {timestamp_str[9:11]}:{timestamp_str[11:13]}:{timestamp_str[13:15]}"
+                else:
+                    date_str = json_file.stem.replace("raw_data_", "").replace("login_", "")
+                
+                session_type = "Kayıt"
+                if "login" in json_file.name:
+                    session_type = "Giriş"
+                
+                metadata = data.get("session_metadata", {})
+                if isinstance(metadata, dict):
+                    accuracy = metadata.get("accuracy_rate", 0.0)
+                    if accuracy < 1.0:
+                        accuracy = accuracy * 100
+                    wpm = metadata.get("wpm", 0.0) or metadata.get("words_per_minute", 0.0)
+                else:
+                    accuracy = 0.0
+                    wpm = 0.0
+                    features_file = user_dir / json_file.name.replace("raw_data_", "features_").replace("login_", "features_").replace(".json", ".csv")
+                    if features_file.exists():
+                        try:
+                            df = pd.read_csv(features_file)
+                            speed_df = df[df['feature_category'] == 'typing_speed']
+                            if len(speed_df) > 0:
+                                wpm_row = speed_df[speed_df['feature_type'] == 'words_per_minute']
+                                if len(wpm_row) > 0:
+                                    wpm = float(wpm_row.iloc[0]['value'])
+                                accuracy_row = speed_df[speed_df['feature_type'] == 'accuracy_rate']
+                                if len(accuracy_row) > 0:
+                                    accuracy = float(accuracy_row.iloc[0]['value']) * 100
+                        except:
+                            pass
+                
+                confidence = data.get("confidence", 1.0)
+                success = data.get("success", True)
+                
+                sessions.append({
+                    "date": date_str,
+                    "type": session_type,
+                    "accuracy": round(accuracy, 1) if accuracy > 0 else round(confidence * 100, 1),
+                    "wpm": round(wpm, 0),
+                    "status": "success" if success else "failed"
+                })
+                
+                if accuracy > 0:
+                    accuracy_values.append(accuracy)
+                if wpm > 0:
+                    wpm_values.append(wpm)
+                    
+            except Exception as e:
+                logging.warning(f"Dosya okuma hatası {json_file}: {str(e)}")
+                continue
+        
+        total_sessions = len(sessions)
+        avg_accuracy = sum(accuracy_values) / len(accuracy_values) if accuracy_values else 0
+        avg_wpm = sum(wpm_values) / len(wpm_values) if wpm_values else 0
+        
+        accuracy_trend = []
+        if sessions:
+            recent_sessions = sessions[:7]
+            accuracy_trend = [s["accuracy"] for s in recent_sessions]
+            while len(accuracy_trend) < 7:
+                accuracy_trend.append(accuracy_trend[-1] if accuracy_trend else avg_accuracy)
+        
+        return {
+            "total_sessions": total_sessions,
+            "avg_accuracy": round(avg_accuracy, 1),
+            "avg_wpm": round(avg_wpm, 0),
+            "sessions": sessions[:20],
+            "accuracy_trend": accuracy_trend[:7]
+        }
+        
+    except Exception as e:
+        logging.error(f"Kullanıcı istatistikleri hatası: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"İstatistikler alınamadı: {str(e)}")
+
+
 @app.post("/api/register")
 async def register_user(data: RegisterRequest):
     try:
@@ -80,19 +568,33 @@ async def register_user(data: RegisterRequest):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         raw_data_file = user_dir / f"raw_data_{timestamp}.json"
+        features = extract_keystroke_features(data.keystrokes)
+        
+        session_metadata = {}
+        if data.metadata:
+            session_metadata = data.metadata.dict()
+        else:
+            session_metadata = {
+                "accuracy_rate": features.get("typing_speed", {}).get("accuracy_rate", 0.0) * 100,
+                "wpm": features.get("typing_speed", {}).get("words_per_minute", 0.0),
+                "correct_keys": data.metadata.correct_keys if data.metadata else len([k for k in data.keystrokes if k.event_type == "keydown" and k.key != "Backspace"]),
+                "total_keys": len(data.keystrokes)
+            }
+        
         raw_data = {
             "username": data.username,
             "email": data.email,
             "timestamp": timestamp,
+            "session_type": "register",
+            "success": True,
             "total_keystrokes": len(data.keystrokes),
             "keystrokes": [k.dict() for k in data.keystrokes],
-            "session_metadata": data.metadata.dict() if data.metadata else {}
+            "session_metadata": session_metadata
         }
         
         with open(raw_data_file, 'w', encoding='utf-8') as f:
             json.dump(raw_data, f, indent=2, ensure_ascii=False)
         
-        features = extract_keystroke_features(data.keystrokes)
         features_file = user_dir / f"features_{timestamp}.csv"
         save_features_to_csv(features, features_file, data.username)
         

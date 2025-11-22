@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biometric Login - Keystroke Dynamics</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        const originalWarn = console.warn;
+        console.warn = function(...args) {
+            if (args[0] && typeof args[0] === 'string' && args[0].includes('cdn.tailwindcss.com')) {
+                return;
+            }
+            originalWarn.apply(console, args);
+        };
+        
+        tailwind.config = {
+            theme: {
+                extend: {}
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #0f1419 100%);
+            color: #e2e8f0;
+            overflow-x: hidden;
+            position: relative;
+        }
+        
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(circle at 20% 50%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(168, 85, 247, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 40% 20%, rgba(16, 185, 129, 0.1) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(24px) saturate(180%);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 
+                0 8px 32px rgba(0, 0, 0, 0.4),
+                inset 0 1px 1px rgba(255, 255, 255, 0.05);
+            position: relative;
+        }
+        
+        .glass-panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, 
+                transparent 0%,
+                rgba(59, 130, 246, 0.5) 30%,
+                rgba(168, 85, 247, 0.5) 70%,
+                transparent 100%);
+        }
+        
+        .typing-area {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.4rem;
+            line-height: 2.2rem;
+            user-select: none;
+            letter-spacing: 0.02em;
+        }
+        
+        .letter {
+            color: #475569;
+            position: relative;
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .letter.correct {
+            color: #f1f5f9;
+            text-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
+        }
+        
+        .letter.incorrect {
+            color: #ef4444;
+            animation: shake 0.3s;
+            text-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-3px); }
+            75% { transform: translateX(3px); }
+        }
+        
+        .letter.active::before {
+            content: '';
+            position: absolute;
+            left: -2px;
+            bottom: -4px;
+            width: 3px;
+            height: calc(100% + 8px);
+            background: linear-gradient(180deg, #3b82f6 0%, #8b5cf6 100%);
+            border-radius: 2px;
+            animation: blink 1.2s ease-in-out infinite;
+            box-shadow: 0 0 12px rgba(59, 130, 246, 0.6);
+        }
+        
+        @keyframes blink {
+            0%, 49% { opacity: 1; }
+            50%, 100% { opacity: 0; }
+        }
+        
+        @keyframes blob {
+            0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+            33% { transform: translate(40px, -60px) scale(1.15) rotate(120deg); }
+            66% { transform: translate(-30px, 30px) scale(0.95) rotate(240deg); }
+        }
+        
+        .animate-blob {
+            animation: blob 12s infinite;
+        }
+        
+        .animation-delay-2000 {
+            animation-delay: 2s;
+        }
+        
+        .animation-delay-4000 {
+            animation-delay: 4s;
+        }
+        
+        .logo {
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 900;
+            font-size: 2rem;
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.02em;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .btn-primary::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+        
+        .btn-primary:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
+        }
+        
+        .particle {
+            position: fixed;
+            width: 4px;
+            height: 4px;
+            background: rgba(59, 130, 246, 0.6);
+            border-radius: 50%;
+            pointer-events: none;
+            animation: particle-float 3s linear infinite;
+        }
+        
+        @keyframes particle-float {
+            0% {
+                transform: translateY(100vh) translateX(0) scale(0);
+                opacity: 0;
+            }
+            10% {
+                opacity: 1;
+            }
+            90% {
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(-100px) translateX(100px) scale(1);
+                opacity: 0;
+            }
+        }
+        
+        @keyframes shimmer {
+            0% {
+                transform: translateX(-100%);
+            }
+            100% {
+                transform: translateX(100%);
+            }
+        }
+        
+        .animate-shimmer {
+            animation: shimmer 2s infinite;
+        }
+        
+        .progress-bar {
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+        }
+        
+        .scanning {
+            animation: scan 2s ease-in-out infinite;
+        }
+        
+        @keyframes scan {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 0.8;
+            }
+            50% {
+                transform: scale(1.1);
+                opacity: 1;
+            }
+        }
+        
+        .hidden { display: none; }
+        
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(8px);
+            z-index: 9998;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        
+        .modal-overlay.show {
+            opacity: 1;
+            pointer-events: all;
+        }
+        
+        .modal-content {
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(24px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            padding: 0;
+            max-width: 480px;
+            width: 90%;
+            box-shadow: 
+                0 20px 60px rgba(0, 0, 0, 0.5),
+                inset 0 1px 1px rgba(255, 255, 255, 0.1);
+            transform: scale(0.9) translateY(20px);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .modal-overlay.show .modal-content {
+            transform: scale(1) translateY(0);
+        }
+        
+        .modal-content::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, 
+                #3b82f6 0%,
+                #8b5cf6 50%,
+                #ec4899 100%);
+        }
+        
+        .modal-header {
+            padding: 32px 32px 24px;
+            text-align: center;
+            position: relative;
+        }
+        
+        .modal-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            animation: scaleIn 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .modal-icon.success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            box-shadow: 0 0 30px rgba(16, 185, 129, 0.4);
+        }
+        
+        .modal-icon.error {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            box-shadow: 0 0 30px rgba(239, 68, 68, 0.4);
+        }
+        
+        @keyframes scaleIn {
+            0% {
+                transform: scale(0);
+                opacity: 0;
+            }
+            50% {
+                transform: scale(1.1);
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+        
+        .modal-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .modal-body {
+            padding: 0 32px 32px;
+        }
+        
+        .modal-info {
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .modal-info-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+            color: #e2e8f0;
+        }
+        
+        .modal-info-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .modal-info-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            background: rgba(59, 130, 246, 0.2);
+            color: #60a5fa;
+        }
+        
+        .modal-info-text {
+            flex: 1;
+        }
+        
+        .modal-info-label {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 2px;
+        }
+        
+        .modal-info-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #f1f5f9;
+        }
+        
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            padding: 0 32px 32px;
+        }
+        
+        .modal-btn {
+            flex: 1;
+            padding: 14px 24px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .modal-btn-primary {
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+        }
+        
+        .modal-btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+        }
+        
+        .modal-btn-secondary {
+            background: rgba(51, 65, 85, 0.6);
+            color: #e2e8f0;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .modal-btn-secondary:hover {
+            background: rgba(51, 65, 85, 0.8);
+        }
+        
+        .confidence-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+        
+        .confidence-badge.high {
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+        
+        .confidence-badge.medium {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+            border: 1px solid rgba(251, 191, 36, 0.3);
+        }
+        
+        .confidence-badge.low {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+    </style>
+</head>
+<body class="min-h-screen w-full flex flex-col items-center justify-center overflow-hidden relative py-8">
+
+    <!-- Animated Background Orbs -->
+    <div class="absolute top-0 left-0 w-96 h-96 bg-blue-500 rounded-full mix-blend-screen filter blur-3xl opacity-20 animate-blob"></div>
+    <div class="absolute top-0 right-0 w-96 h-96 bg-purple-500 rounded-full mix-blend-screen filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
+    <div class="absolute bottom-0 left-1/2 w-96 h-96 bg-pink-500 rounded-full mix-blend-screen filter blur-3xl opacity-20 animate-blob animation-delay-4000"></div>
+    
+    <!-- Particles -->
+    <div id="particles-container"></div>
+    
+    <!-- Logo Header -->
+    <div class="mb-8 text-center z-10">
+        <div class="logo mb-2 flex items-center justify-center gap-3">
+            <i class="fas fa-fingerprint"></i>
+            <span>KEYSTROKE DYNAMICS</span>
+        </div>
+        <p class="text-slate-400 text-sm tracking-wider uppercase">Biometric Authentication System</p>
+    </div>
+
+    <div class="glass-panel w-full max-w-4xl p-10 rounded-3xl z-10 relative transition-all duration-500" id="mainContainer">
+        
+        <!-- Login Form -->
+        <div id="loginForm" class="w-full max-w-md mx-auto">
+            <div class="text-center mb-8">
+                <div class="inline-block p-4 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-2xl mb-4 scanning">
+                    <i class="fas fa-shield-halved text-5xl text-blue-400"></i>
+                </div>
+                <h2 class="text-4xl font-bold text-center mb-3 bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                    Biometrik Giriş
+                </h2>
+                <p class="text-slate-400 text-sm">
+                    <i class="fas fa-keyboard text-blue-400 mr-2"></i>
+                    Yazma şeklinizle kimliğinizi doğrulayın
+                </p>
+            </div>
+            
+            <div class="space-y-5">
+                <div class="relative">
+                    <label class="block text-xs uppercase tracking-wider font-semibold text-slate-400 mb-2 flex items-center gap-2">
+                        <i class="fas fa-user text-blue-400"></i>
+                        Kullanıcı Adı
+                    </label>
+                    <input type="text" id="username" class="w-full bg-slate-800/50 border border-slate-700 rounded-xl px-5 py-4 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-white placeholder-slate-500 text-lg" placeholder="Kullanıcı adınızı girin">
+                </div>
+                <button onclick="startBiometricAuth()" class="w-full btn-primary text-white font-bold py-4 rounded-xl transition-all shadow-xl shadow-blue-500/30 mt-6 text-lg relative z-10 flex items-center justify-center gap-3">
+                    <span>Biyometrik Doğrulama Başlat</span>
+                    <i class="fas fa-fingerprint"></i>
+                </button>
+                
+                <div class="text-center mt-6">
+                    <p class="text-slate-500 text-sm">Hesabınız yok mu?</p>
+                    <a href="/register" class="text-blue-400 hover:text-blue-300 font-semibold text-sm transition-colors">
+                        <i class="fas fa-user-plus mr-1"></i>
+                        Kayıt Ol
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Biometric Auth Step -->
+        <div id="authStep" class="hidden w-full">
+            <div class="text-center mb-6">
+                <h3 class="text-3xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-4 flex items-center justify-center gap-3">
+                    <i class="fas fa-user-lock scanning"></i>
+                    Kimlik Doğrulanıyor
+                </h3>
+                <p class="text-slate-400 text-sm mb-6">
+                    <i class="fas fa-shield-check text-emerald-400 mr-2"></i>
+                    Klavye dinamikleriniz analiz ediliyor
+                </p>
+                
+                <div class="w-full bg-slate-800/50 rounded-full h-3 mb-2 relative overflow-hidden border border-slate-700">
+                    <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent animate-shimmer"></div>
+                    <div id="progressBar" class="progress-bar bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 h-full rounded-full relative z-10" style="width: 0%"></div>
+                </div>
+                <p class="text-sm text-slate-400 font-mono">
+                    <span id="progressText" class="text-blue-400 font-bold">0</span>
+                    <span class="mx-1">/</span>
+                    <span id="totalChars" class="text-purple-400 font-bold">0</span>
+                    <span class="ml-2 text-slate-500">karakterler</span>
+                </p>
+            </div>
+
+            <div id="textDisplay" class="typing-area mb-8 text-justify break-words p-8 bg-gradient-to-br from-slate-800/40 to-slate-900/40 rounded-2xl border border-slate-700/50 min-h-[200px] shadow-2xl backdrop-blur-sm relative overflow-hidden" onclick="focusInput()">
+                <div class="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5"></div>
+                <span class="text-slate-500 relative z-10">
+                    <i class="fas fa-spinner fa-spin mr-2"></i>
+                    Doğrulama metni yükleniyor...
+                </span>
+            </div>
+
+            <input type="text" id="hiddenInput" class="absolute opacity-0 top-0 left-0" autocomplete="off">
+
+            <div class="flex justify-between items-center mt-6">
+                <button onclick="cancelAuth()" class="text-slate-400 hover:text-white text-base flex items-center gap-3 transition-all hover:scale-105 px-6 py-3 rounded-xl hover:bg-slate-800/50">
+                    <i class="fas fa-arrow-left"></i>
+                    <span class="font-semibold">Geri Dön</span>
+                </button>
+                <button id="verifyBtn" class="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white px-10 py-4 rounded-xl font-bold opacity-50 cursor-not-allowed transition-all shadow-2xl text-lg relative z-10" disabled onclick="verifyIdentity()">
+                    <span class="flex items-center gap-3 relative z-10">
+                        <i class="fas fa-shield-check"></i>
+                        <span>Kimliği Doğrula</span>
+                        <i class="fas fa-arrow-right"></i>
+                    </span>
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Success Modal -->
+    <div id="successModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-icon success">
+                    <i class="fas fa-check-circle text-white"></i>
+                </div>
+                <h3 class="modal-title">Kimlik Doğrulandı!</h3>
+                <p class="text-slate-400 text-sm">Başarıyla giriş yaptınız</p>
+            </div>
+            <div class="modal-body">
+                <div class="modal-info">
+                    <div class="modal-info-item">
+                        <div class="modal-info-icon">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <div class="modal-info-text">
+                            <div class="modal-info-label">Kullanıcı</div>
+                            <div class="modal-info-value" id="modalUsername">-</div>
+                        </div>
+                    </div>
+                    <div class="modal-info-item">
+                        <div class="modal-info-icon">
+                            <i class="fas fa-shield-check"></i>
+                        </div>
+                        <div class="modal-info-text">
+                            <div class="modal-info-label">Güven Skoru</div>
+                            <div class="modal-info-value">
+                                <span id="modalConfidence">-</span>
+                                <span class="confidence-badge high" id="confidenceBadge">Yüksek</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn modal-btn-primary" onclick="closeSuccessModal()">
+                    <i class="fas fa-arrow-right"></i>
+                    <span>Dashboard'a Git</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error Modal -->
+    <div id="errorModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-icon error">
+                    <i class="fas fa-times-circle text-white"></i>
+                </div>
+                <h3 class="modal-title">Doğrulama Başarısız</h3>
+                <p class="text-slate-400 text-sm">Kimlik doğrulanamadı</p>
+            </div>
+            <div class="modal-body">
+                <div class="modal-info">
+                    <div class="modal-info-item">
+                        <div class="modal-info-icon" style="background: rgba(239, 68, 68, 0.2); color: #f87171;">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="modal-info-text">
+                            <div class="modal-info-label">Hata Mesajı</div>
+                            <div class="modal-info-value" id="errorMessage" style="font-size: 0.95rem;">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn modal-btn-secondary" onclick="closeErrorModal()">
+                    <i class="fas fa-times"></i>
+                    <span>Kapat</span>
+                </button>
+                <button class="modal-btn modal-btn-primary" onclick="retryAuth()">
+                    <i class="fas fa-redo"></i>
+                    <span>Tekrar Dene</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let targetText = "";
+        let currentIndex = 0;
+        let keystrokeData = [];
+        let shiftPressed = false;
+        let ctrlPressed = false;
+        let altPressed = false;
+        let incorrectKeyCount = 0;
+        let correctKeyCount = 0;
+        let username = "";
+        
+        const loginForm = document.getElementById('loginForm');
+        const authStep = document.getElementById('authStep');
+        const textDisplay = document.getElementById('textDisplay');
+        const hiddenInput = document.getElementById('hiddenInput');
+        const verifyBtn = document.getElementById('verifyBtn');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        const totalChars = document.getElementById('totalChars');
+
+        async function startBiometricAuth() {
+            username = document.getElementById('username').value.trim();
+            if(!username) {
+                alert("Lütfen kullanıcı adınızı girin.");
+                return;
+            }
+
+            loginForm.classList.add('opacity-0', 'translate-x-[-20px]');
+            setTimeout(async () => {
+                loginForm.classList.add('hidden');
+                authStep.classList.remove('hidden');
+                
+                await fetchText();
+                
+                authStep.classList.add('animate-fadeIn');
+            }, 300);
+        }
+
+        async function fetchText() {
+            textDisplay.innerHTML = '<span class="text-blue-400 animate-pulse"><i class="fas fa-spinner fa-spin mr-2"></i>Doğrulama metni hazırlanıyor...</span>';
+            
+            try {
+                const res = await fetch('/api/get-text');
+                const data = await res.json();
+                targetText = data.text;
+                renderText();
+                focusInput();
+            } catch (err) {
+                textDisplay.innerHTML = "<span class='text-red-400'><i class='fas fa-exclamation-triangle mr-2'></i>Hata oluştu. Lütfen sayfayı yenileyin.</span>";
+            }
+        }
+
+        function renderText() {
+            textDisplay.innerHTML = '';
+            targetText.split('').forEach(char => {
+                const span = document.createElement('span');
+                span.innerText = char;
+                span.className = 'letter';
+                textDisplay.appendChild(span);
+            });
+            totalChars.textContent = targetText.length;
+            updateActiveLetter();
+            updateProgress();
+        }
+
+        function updateActiveLetter() {
+            const letters = document.querySelectorAll('.letter');
+            letters.forEach(l => l.classList.remove('active'));
+            if (currentIndex < letters.length) {
+                letters[currentIndex].classList.add('active');
+            }
+        }
+
+        function focusInput() {
+            hiddenInput.focus();
+        }
+
+        function updateProgress() {
+            const progress = targetText.length > 0 ? (currentIndex / targetText.length) * 100 : 0;
+            progressBar.style.width = progress + '%';
+            progressText.textContent = currentIndex;
+            
+            if (currentIndex === targetText.length && currentIndex > 0) {
+                verifyBtn.disabled = false;
+                verifyBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                verifyBtn.classList.add('scale-105', 'shadow-emerald-500/50');
+            }
+        }
+
+        hiddenInput.addEventListener('keydown', (e) => {
+            if (e.key === "Shift") {
+                shiftPressed = true;
+                keystrokeData.push({
+                    key: e.key,
+                    code: e.code,
+                    event_type: 'keydown',
+                    timestamp: performance.now(),
+                    is_modifier: true
+                });
+                return;
+            }
+            if (e.key === "Control") {
+                ctrlPressed = true;
+                return;
+            }
+            if (e.key === "Alt") {
+                altPressed = true;
+                return;
+            }
+
+            const letters = document.querySelectorAll('.letter');
+            const expectedChar = currentIndex < targetText.length ? targetText[currentIndex] : null;
+            
+            if (e.key === "Backspace") {
+                keystrokeData.push({
+                    key: e.key,
+                    code: e.code,
+                    event_type: 'keydown',
+                    timestamp: performance.now(),
+                    is_backspace: true,
+                    is_correct: false,
+                    shift_pressed: shiftPressed,
+                    position: currentIndex
+                });
+                
+                if (currentIndex > 0) {
+                    currentIndex--;
+                    letters[currentIndex].className = 'letter';
+                    updateActiveLetter();
+                    updateProgress();
+                }
+                return;
+            }
+
+            const isCorrect = e.key === expectedChar;
+            
+            keystrokeData.push({
+                key: e.key,
+                code: e.code,
+                event_type: 'keydown',
+                timestamp: performance.now(),
+                is_correct: isCorrect,
+                is_backspace: false,
+                shift_pressed: shiftPressed,
+                ctrl_pressed: ctrlPressed,
+                alt_pressed: altPressed,
+                expected_char: expectedChar,
+                position: currentIndex
+            });
+
+            if (isCorrect) {
+                correctKeyCount++;
+            } else {
+                incorrectKeyCount++;
+            }
+
+            if (currentIndex < targetText.length) {
+                if (isCorrect) {
+                    letters[currentIndex].classList.add('correct');
+                } else {
+                    letters[currentIndex].classList.add('incorrect');
+                }
+                
+                currentIndex++;
+                updateActiveLetter();
+                updateProgress();
+            }
+        });
+
+        hiddenInput.addEventListener('keyup', (e) => {
+            if (e.key === "Shift") {
+                shiftPressed = false;
+                keystrokeData.push({
+                    key: e.key,
+                    code: e.code,
+                    event_type: 'keyup',
+                    timestamp: performance.now(),
+                    is_modifier: true
+                });
+                return;
+            }
+            if (e.key === "Control") {
+                ctrlPressed = false;
+                return;
+            }
+            if (e.key === "Alt") {
+                altPressed = false;
+                return;
+            }
+
+            keystrokeData.push({
+                key: e.key,
+                code: e.code,
+                event_type: 'keyup',
+                timestamp: performance.now(),
+                shift_pressed: shiftPressed,
+                position: currentIndex
+            });
+        });
+
+        async function verifyIdentity() {
+            verifyBtn.innerHTML = `<span class="flex items-center gap-3 relative z-10">
+                <i class="fas fa-spinner fa-spin"></i>
+                <span>Doğrulanıyor...</span>
+            </span>`;
+            verifyBtn.disabled = true;
+
+            const totalKeyPresses = correctKeyCount + incorrectKeyCount;
+            const accuracyRate = totalKeyPresses > 0 ? (correctKeyCount / totalKeyPresses) * 100 : 0;
+            
+            const payload = {
+                username: username,
+                keystrokes: keystrokeData,
+                metadata: {
+                    correct_keys: correctKeyCount,
+                    incorrect_keys: incorrectKeyCount,
+                    accuracy_rate: accuracyRate,
+                    target_text: targetText,
+                    total_keystrokes: keystrokeData.length
+                }
+            };
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await res.json();
+                
+                if(result.status === 'success') {
+                    verifyBtn.innerHTML = `<span class="flex items-center gap-3 relative z-10">
+                        <i class="fas fa-check-circle"></i>
+                        <span>Doğrulandı!</span>
+                    </span>`;
+                    
+                    setTimeout(() => {
+                        showSuccessMessage(result);
+                    }, 500);
+                } else {
+                    showErrorMessage(result.message || "Kimlik doğrulanamadı");
+                }
+            } catch (err) {
+                showErrorMessage("Bağlantı hatası. Lütfen tekrar deneyin.");
+            }
+        }
+
+        function showSuccessMessage(result) {
+            const confidence = result.confidence || 0;
+            const confidencePercent = parseFloat((confidence * 100).toFixed(2));
+            
+            // Modal içeriğini doldur - hassas gösterim (2 ondalık)
+            document.getElementById('modalUsername').textContent = result.username || 'Kullanıcı';
+            document.getElementById('modalConfidence').textContent = confidencePercent.toFixed(2) + '%';
+            
+            // Confidence badge'i güncelle (gerçek değerlere göre)
+            const badge = document.getElementById('confidenceBadge');
+            if (confidencePercent >= 90) {
+                badge.className = 'confidence-badge high';
+                badge.textContent = 'Çok Yüksek';
+            } else if (confidencePercent >= 80) {
+                badge.className = 'confidence-badge high';
+                badge.textContent = 'Yüksek';
+            } else if (confidencePercent >= 70) {
+                badge.className = 'confidence-badge medium';
+                badge.textContent = 'Orta-Yüksek';
+            } else if (confidencePercent >= 60) {
+                badge.className = 'confidence-badge medium';
+                badge.textContent = 'Orta';
+            } else {
+                badge.className = 'confidence-badge low';
+                badge.textContent = 'Düşük';
+            }
+            
+            // Modal'ı göster
+            const modal = document.getElementById('successModal');
+            modal.classList.add('show');
+            
+            // 3 saniye sonra otomatik yönlendir
+            setTimeout(() => {
+                window.location.href = '/dashboard?user=' + encodeURIComponent(result.username);
+            }, 3000);
+        }
+        
+        function closeSuccessModal() {
+            const modal = document.getElementById('successModal');
+            modal.classList.remove('show');
+            const username = document.getElementById('modalUsername').textContent;
+            window.location.href = '/dashboard?user=' + encodeURIComponent(username);
+        }
+        
+        function showErrorMessage(message) {
+            verifyBtn.innerHTML = `<span class="flex items-center gap-3 relative z-10">
+                <i class="fas fa-shield-check"></i>
+                <span>Kimliği Doğrula</span>
+                <i class="fas fa-arrow-right"></i>
+            </span>`;
+            verifyBtn.disabled = false;
+            verifyBtn.classList.remove('scale-105', 'shadow-emerald-500/50');
+            
+            // Error modal içeriğini doldur
+            document.getElementById('errorMessage').textContent = message || 'Bilinmeyen bir hata oluştu.';
+            
+            // Modal'ı göster
+            const modal = document.getElementById('errorModal');
+            modal.classList.add('show');
+        }
+        
+        function closeErrorModal() {
+            const modal = document.getElementById('errorModal');
+            modal.classList.remove('show');
+        }
+        
+        function retryAuth() {
+            closeErrorModal();
+            // Formu sıfırla ve tekrar dene
+            currentIndex = 0;
+            keystrokeData = [];
+            correctKeyCount = 0;
+            incorrectKeyCount = 0;
+            shiftPressed = false;
+            ctrlPressed = false;
+            altPressed = false;
+            
+            // Metni yeniden yükle
+            fetchText();
+        }
+        
+        // Modal overlay'e tıklanınca kapat
+        document.getElementById('successModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeSuccessModal();
+            }
+        });
+        
+        document.getElementById('errorModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeErrorModal();
+            }
+        });
+
+        function cancelAuth() {
+            currentIndex = 0;
+            keystrokeData = [];
+            correctKeyCount = 0;
+            incorrectKeyCount = 0;
+            shiftPressed = false;
+            ctrlPressed = false;
+            altPressed = false;
+            
+            authStep.classList.add('hidden');
+            loginForm.classList.remove('hidden', 'opacity-0', 'translate-x-[-20px]');
+            
+            verifyBtn.disabled = true;
+            verifyBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            verifyBtn.classList.remove('scale-105', 'shadow-emerald-500/50');
+        }
+
+        document.addEventListener('click', function(e) {
+            if(!authStep.classList.contains('hidden') && e.target.id !== 'verifyBtn') {
+                hiddenInput.focus();
+            }
+        });
+        
+        function createParticles() {
+            const container = document.getElementById('particles-container');
+            const particleCount = 20;
+            
+            for (let i = 0; i < particleCount; i++) {
+                setTimeout(() => {
+                    const particle = document.createElement('div');
+                    particle.className = 'particle';
+                    particle.style.left = Math.random() * 100 + '%';
+                    particle.style.animationDelay = Math.random() * 3 + 's';
+                    particle.style.animationDuration = (Math.random() * 2 + 2) + 's';
+                    
+                    const colors = [
+                        'rgba(59, 130, 246, 0.6)',
+                        'rgba(168, 85, 247, 0.6)',
+                        'rgba(236, 72, 153, 0.6)',
+                        'rgba(16, 185, 129, 0.6)'
+                    ];
+                    particle.style.background = colors[Math.floor(Math.random() * colors.length)];
+                    
+                    container.appendChild(particle);
+                    
+                    setTimeout(() => {
+                        particle.remove();
+                    }, 3000);
+                }, i * 150);
+            }
+        }
+        
+        setInterval(createParticles, 3000);
+        createParticles();
+    </script>
+</body>
+</html>
+

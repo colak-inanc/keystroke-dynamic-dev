@@ -292,6 +292,116 @@
         .animate-shimmer {
             animation: shimmer 2s infinite;
         }
+        
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .modal-content {
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 24px;
+            padding: 0;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 
+                0 20px 60px rgba(0, 0, 0, 0.5),
+                0 0 40px rgba(59, 130, 246, 0.2);
+            animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+        
+        .modal-header {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 2rem;
+            text-align: center;
+            position: relative;
+        }
+        
+        .modal-body {
+            padding: 2rem;
+        }
+        
+        .modal-footer {
+            padding: 1.5rem 2rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            text-align: center;
+        }
+        
+        .success-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 1rem;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: scaleIn 0.5s cubic-bezier(0.4, 0, 0.2, 1) 0.2s both;
+            box-shadow: 0 8px 32px rgba(16, 185, 129, 0.4);
+        }
+        
+        @keyframes scaleIn {
+            from {
+                transform: scale(0) rotate(-180deg);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1) rotate(0deg);
+                opacity: 1;
+            }
+        }
+        
+        .stat-item {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 1rem;
+            text-align: center;
+        }
+        
+        .confetti {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #fbbf24;
+            animation: confetti-fall 3s linear forwards;
+        }
+        
+        @keyframes confetti-fall {
+            to {
+                transform: translateY(100vh) rotate(720deg);
+                opacity: 0;
+            }
+        }
+        
+        .hidden { display: none; }
     </style>
 </head>
 <body class="min-h-screen w-full flex flex-col items-center justify-center overflow-hidden relative py-8">
@@ -303,6 +413,86 @@
     
     <!-- Particles -->
     <div id="particles-container"></div>
+    
+    <!-- Success Modal -->
+    <div id="successModal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="success-icon">
+                    <i class="fas fa-check text-white text-4xl"></i>
+                </div>
+                <h2 class="text-3xl font-bold bg-gradient-to-r from-emerald-400 via-green-400 to-teal-400 bg-clip-text text-transparent mb-2">
+                    Kayıt Başarılı!
+                </h2>
+                <p class="text-slate-300 text-sm">
+                    <i class="fas fa-shield-check text-emerald-400 mr-2"></i>
+                    Biyometrik profiliniz oluşturuldu
+                </p>
+            </div>
+            
+            <div class="modal-body">
+                <div class="mb-6">
+                    <h3 class="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                        <i class="fas fa-chart-line text-blue-400"></i>
+                        Performans Özeti
+                    </h3>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="stat-item">
+                            <div class="text-xs text-slate-400 mb-1">Doğruluk Oranı</div>
+                            <div id="modalAccuracy" class="text-2xl font-bold text-emerald-400">95%</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="text-xs text-slate-400 mb-1">Yazma Hızı</div>
+                            <div id="modalWPM" class="text-2xl font-bold text-blue-400">45 WPM</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="text-xs text-slate-400 mb-1">Süre</div>
+                            <div id="modalTime" class="text-2xl font-bold text-purple-400">12s</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="text-xs text-slate-400 mb-1">Toplam Tuş</div>
+                            <div id="modalKeys" class="text-2xl font-bold text-orange-400">156</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/20 rounded-xl p-4">
+                    <div class="flex items-start gap-3">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-database text-blue-400 text-xl"></i>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-semibold text-white mb-1">Biometrik Veriler</h4>
+                            <p class="text-xs text-slate-300">
+                                <span id="modalFeatures" class="font-bold text-blue-400">320</span> 
+                                biometrik özellik başarıyla kaydedildi.
+                            </p>
+                            <div class="mt-2 flex flex-wrap gap-1">
+                                <span class="text-xs px-2 py-1 bg-slate-700/50 rounded text-slate-300">
+                                    <i class="fas fa-clock text-blue-400 mr-1"></i>Zamanlama
+                                </span>
+                                <span class="text-xs px-2 py-1 bg-slate-700/50 rounded text-slate-300">
+                                    <i class="fas fa-chart-bar text-purple-400 mr-1"></i>İstatistik
+                                </span>
+                                <span class="text-xs px-2 py-1 bg-slate-700/50 rounded text-slate-300">
+                                    <i class="fas fa-wave-square text-emerald-400 mr-1"></i>Ritim
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-footer">
+                <button onclick="closeModal()" class="btn-primary text-white font-bold py-3 px-8 rounded-xl transition-all shadow-xl w-full relative z-10">
+                    <span class="flex items-center justify-center gap-2 relative z-10">
+                        <i class="fas fa-check-circle"></i>
+                        <span>Tamam</span>
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
     
     <!-- Logo Header -->
     <div class="mb-8 text-center z-10">
@@ -323,10 +513,6 @@
                 <h2 class="text-4xl font-bold text-center mb-3 bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
                     Hesap Oluştur
                 </h2>
-                <p class="text-center text-slate-400 text-sm">
-                    <i class="fas fa-shield-alt text-emerald-400 mr-2"></i>
-                    Gelişmiş biyometrik profil oluşturulacak
-                </p>
             </div>
             
             <div class="space-y-5">
@@ -754,23 +940,16 @@
                 const wpm = parseInt(wpmDisplay.textContent);
                 const time = timeDisplay.textContent;
                 
-                completeBtn.innerHTML = `<span class="flex items-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                    Başarılı!
+                completeBtn.innerHTML = `<span class="flex items-center gap-2 relative z-10">
+                    <i class="fas fa-check-circle"></i>
+                    <span>Başarılı!</span>
                 </span>`;
                 
                 setTimeout(() => {
-                    alert(`🎉 Kayıt Başarıyla Tamamlandı!\n\n` +
-                          `📊 Performans Özeti:\n` +
-                          `• Doğruluk Oranı: ${accuracyRate.toFixed(1)}%\n` +
-                          `• Yazma Hızı: ${wpm} WPM\n` +
-                          `• Süre: ${time}\n` +
-                          `• Toplam Tuş: ${totalKeyPresses}\n\n` +
-                          `✅ ${result.keystroke_count} biometrik özellik kaydedildi.`);
-                    location.reload();
-                }, 500);
+                    showSuccessModal(accuracyRate, wpm, time, totalKeyPresses, result.keystroke_count);
+                }, 300);
             } else {
-                alert("❌ Hata: " + (result.detail || "Kayıt başarısız"));
+                showErrorModal(result.detail || "Kayıt başarısız");
             }
         }
 
@@ -830,6 +1009,58 @@
         
         setInterval(createParticles, 3000);
         createParticles();
+        
+        function showSuccessModal(accuracy, wpm, time, keys, features) {
+            document.getElementById('modalAccuracy').textContent = accuracy.toFixed(1) + '%';
+            document.getElementById('modalWPM').textContent = wpm + ' WPM';
+            document.getElementById('modalTime').textContent = time;
+            document.getElementById('modalKeys').textContent = keys;
+            document.getElementById('modalFeatures').textContent = features;
+            
+            const modal = document.getElementById('successModal');
+            modal.classList.remove('hidden');
+            
+            createConfetti();
+        }
+        
+        function closeModal() {
+            const modal = document.getElementById('successModal');
+            modal.classList.add('hidden');
+            location.reload();
+        }
+        
+        function showErrorModal(message) {
+            alert("❌ Hata: " + message);
+        }
+        
+        function createConfetti() {
+            const colors = ['#fbbf24', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899', '#10b981'];
+            const modalContent = document.querySelector('.modal-content');
+            
+            for (let i = 0; i < 50; i++) {
+                setTimeout(() => {
+                    const confetti = document.createElement('div');
+                    confetti.className = 'confetti';
+                    confetti.style.left = Math.random() * 100 + '%';
+                    confetti.style.background = colors[Math.floor(Math.random() * colors.length)];
+                    confetti.style.animationDelay = Math.random() * 0.5 + 's';
+                    confetti.style.animationDuration = (Math.random() * 2 + 2) + 's';
+                    
+                    modalContent.appendChild(confetti);
+                    
+                    setTimeout(() => confetti.remove(), 3000);
+                }, i * 30);
+            }
+        }
+        
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                const modal = document.getElementById('successModal');
+                if (!modal.classList.contains('hidden')) {
+                    closeModal();
+                }
+            }
+        });
     </script>
 </body>
 </html>
