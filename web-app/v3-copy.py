@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 import tensorflow as tf
 import numpy as np
 
-##load_dotenv()
+load_dotenv()
 app = FastAPI()
 
 BASE_DIR = Path(__file__).parent.parent
@@ -941,10 +941,16 @@ def calculate_typing_speed(keystrokes: List[KeystrokeData], typed_sequence: list
 def save_features_to_csv(features: dict, filepath: Path, username: str):
     import csv
     import json
-    
+
+    def safe_get_key(item: dict, primary: str, fallback: str) -> str:
+        val = item.get(primary)
+        if val is None or val == "":
+            return item.get(fallback, "")
+        return val
+
     with open(filepath, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        
+
         writer.writerow([
             "username",
             "feature_category",
@@ -955,139 +961,274 @@ def save_features_to_csv(features: dict, filepath: Path, username: str):
             "additional_data",
             "sequence_index"
         ])
-        
-        for idx, dwell in enumerate(features["dwell_times"]):
-            writer.writerow([username, "timing", "dwell_time", "", "", dwell, "", idx])
-        
-        for idx, flight in enumerate(features["flight_times"]):
-            writer.writerow([username, "timing", "flight_time", "", "", flight, "", idx])
-        
-        for idx, delay in enumerate(features["inter_key_delays"]):
-            writer.writerow([username, "timing", "inter_key_delay", "", "", delay, "", idx])
-        
-        for idx, down_down in enumerate(features.get("down_down_latencies", [])):
+
+        # 1) Dwell Time – hold_times varsa oradan, yoksa eski yapıdan
+        hold_times = features.get("hold_times", [])
+        if hold_times:
+            for idx, hold in enumerate(hold_times):
+                key_char = hold.get("key", "")
+                dwell = hold.get("dwell_time", 0.0)
+                additional = {
+                    "keydown_timestamp": hold.get("keydown_timestamp"),
+                    "keyup_timestamp": hold.get("keyup_timestamp"),
+                    "key_code": hold.get("key_code")
+                }
+                writer.writerow([
+                    username,
+                    "timing",
+                    "dwell_time",
+                    key_char,          # key_from
+                    "",                # key_to yok
+                    dwell,
+                    json.dumps(additional, ensure_ascii=False),
+                    idx
+                ])
+        else:
+            # Eski davranış – sadece dwell_times listesi varsa
+            for idx, dwell in enumerate(features.get("dwell_times", [])):
+                writer.writerow([
+                    username,
+                    "timing",
+                    "dwell_time",
+                    "",
+                    "",
+                    dwell,
+                    "",
+                    idx
+                ])
+
+        # 2) Flight / inter key delay (sende varsa)
+        for idx, delay in enumerate(features.get("inter_key_delays", [])):
             writer.writerow([
-                username, "timing", "down_down_latency",
-                down_down["from_key"], down_down["to_key"],
-                down_down["latency"],
-                json.dumps({"from_code": down_down["from_code"], "to_code": down_down["to_code"]}),
+                username,
+                "timing",
+                "inter_key_delay",
+                "",
+                "",
+                delay,
+                "",
                 idx
             ])
-        
+
+        # 3) Down–down latency – from_key boşsa from_code ile doldur
+        for idx, down_down in enumerate(features.get("down_down_latencies", [])):
+            from_key = safe_get_key(down_down, "from_key", "from_code")
+            to_key = safe_get_key(down_down, "to_key", "to_code")
+
+            additional = {
+                "from_code": down_down.get("from_code"),
+                "to_code": down_down.get("to_code")
+            }
+
+            writer.writerow([
+                username,
+                "timing",
+                "down_down_latency",
+                from_key,
+                to_key,
+                down_down.get("latency", 0.0),
+                json.dumps(additional, ensure_ascii=False),
+                idx
+            ])
+
+        # 4) Up–down latency – aynı fallback mantığı
         for idx, up_down in enumerate(features.get("up_down_latencies", [])):
+            from_key = safe_get_key(up_down, "from_key", "from_code")
+            to_key = safe_get_key(up_down, "to_key", "to_code")
+
             writer.writerow([
-                username, "timing", "up_down_latency",
-                up_down["from_key"], up_down["to_key"],
-                up_down["latency"], "", idx
+                username,
+                "timing",
+                "up_down_latency",
+                from_key,
+                to_key,
+                up_down.get("latency", 0.0),
+                "",
+                idx
             ])
-        
+
+        # 5) Up–up latency – aynı fallback mantığı
         for idx, up_up in enumerate(features.get("up_up_latencies", [])):
+            from_key = safe_get_key(up_up, "from_key", "from_code")
+            to_key = safe_get_key(up_up, "to_key", "to_code")
+
             writer.writerow([
-                username, "timing", "up_up_latency",
-                up_up["from_key"], up_up["to_key"],
-                up_up["latency"], "", idx
+                username,
+                "timing",
+                "up_up_latency",
+                from_key,
+                to_key,
+                up_up.get("latency", 0.0),
+                "",
+                idx
             ])
-        
+
+        # 6) Ham key event logları
         for idx, key_event in enumerate(features.get("key_events", [])):
             writer.writerow([
-                username, "raw_event", key_event["event_type"],
-                key_event["key_char"], key_event["key_code"],
-                key_event["timestamp"], "", idx
+                username,
+                "raw_event",
+                key_event.get("event_type", ""),
+                key_event.get("key_char", ""),
+                key_event.get("key_code", ""),
+                key_event.get("timestamp", 0.0),
+                "",
+                idx
             ])
-        
-        for idx, digraph in enumerate(features["digraph_times"]):
+
+        # 7) n-gram (digraph, trigram, four-gram)
+        for idx, digraph in enumerate(features.get("digraph_times", [])):
             writer.writerow([
-                username, "n-gram", "digraph",
-                digraph["from"], digraph["to"],
-                digraph["time"], "", idx
+                username,
+                "n-gram",
+                "digraph",
+                digraph.get("from", ""),
+                digraph.get("to", ""),
+                digraph.get("time", 0.0),
+                "",
+                idx
             ])
-        
-        for idx, trigram in enumerate(features["trigram_times"]):
-            keys_str = "->".join(trigram["keys"])
+
+        for idx, trigram in enumerate(features.get("trigram_times", [])):
+            keys_str = "->".join(trigram.get("keys", []))
             writer.writerow([
-                username, "n-gram", "trigram",
-                keys_str, "",
-                trigram["time"], "", idx
+                username,
+                "n-gram",
+                "trigram",
+                keys_str,
+                "",
+                trigram.get("time", 0.0),
+                "",
+                idx
             ])
-        
-        for idx, four_gram in enumerate(features["four_gram_times"]):
-            keys_str = "->".join(four_gram["keys"])
+
+        for idx, four_gram in enumerate(features.get("four_gram_times", [])):
+            keys_str = "->".join(four_gram.get("keys", []))
             writer.writerow([
-                username, "n-gram", "four_gram",
-                keys_str, "",
-                four_gram["time"], "", idx
+                username,
+                "n-gram",
+                "four_gram",
+                keys_str,
+                "",
+                four_gram.get("time", 0.0),
+                "",
+                idx
             ])
-        
+
+        # 8) Backspace davranışı
         writer.writerow([
-            username, "behavior", "backspace_count",
-            "", "", features["backspace_count"], "", 0
+            username,
+            "behavior",
+            "backspace_count",
+            "",
+            "",
+            features.get("backspace_count", 0),
+            "",
+            0
         ])
-        
-        for idx, latency in enumerate(features["backspace_latencies"]):
+
+        for idx, latency in enumerate(features.get("backspace_latencies", [])):
             writer.writerow([
-                username, "behavior", "backspace_latency",
-                "", "", latency, "", idx
-            ])
-        
-        for idx, correction in enumerate(features["error_corrections"]):
-            writer.writerow([
-                username, "behavior", "error_correction",
-                correction["char"], "",
-                correction["latency"],
-                json.dumps({"position": correction["position"]}),
+                username,
+                "behavior",
+                "backspace_latency",
+                "",
+                "",
+                latency,
+                "",
                 idx
             ])
-        
-        for idx, pause in enumerate(features["pause_events"]):
+
+        for idx, correction in enumerate(features.get("error_corrections", [])):
             writer.writerow([
-                username, "rhythm", "pause",
-                pause["after_key"], pause["before_key"],
-                pause["duration"],
-                json.dumps({"position": pause["position"]}),
+                username,
+                "behavior",
+                "error_correction",
+                correction.get("char", ""),
+                "",
+                correction.get("latency", 0.0),
+                json.dumps({"position": correction.get("position")}, ensure_ascii=False),
                 idx
             ])
-        
-        for idx, speed_change in enumerate(features["speed_changes"]):
+
+        # 9) Pause / ritim
+        for idx, pause in enumerate(features.get("pause_events", [])):
             writer.writerow([
-                username, "rhythm", "speed_change",
-                "", "", speed_change, "", idx
-            ])
-        
-        for idx, pressure in enumerate(features["key_pressure_estimate"]):
-            writer.writerow([
-                username, "pressure", "key_pressure",
-                pressure["key"], "",
-                pressure["pressure"],
-                json.dumps({"dwell": pressure["dwell"]}),
+                username,
+                "rhythm",
+                "pause",
+                pause.get("after_key", ""),
+                pause.get("before_key", ""),
+                pause.get("duration", 0.0),
+                json.dumps({"position": pause.get("position")}, ensure_ascii=False),
                 idx
             ])
-        
-        for idx, shift_usage in enumerate(features["shift_usage"]):
+
+        for idx, speed_change in enumerate(features.get("speed_changes", [])):
             writer.writerow([
-                username, "behavior", "shift_combo",
-                "", shift_usage.get("next_key", ""),
-                shift_usage["timestamp"], "", idx
+                username,
+                "rhythm",
+                "speed_change",
+                "",
+                "",
+                speed_change,
+                "",
+                idx
             ])
-        
+
+        # 10) Basınç tahmini
+        for idx, pressure in enumerate(features.get("key_pressure_estimate", [])):
+            writer.writerow([
+                username,
+                "pressure",
+                "key_pressure",
+                pressure.get("key", ""),
+                "",
+                pressure.get("pressure", 0.0),
+                json.dumps({"dwell": pressure.get("dwell")}, ensure_ascii=False),
+                idx
+            ])
+
+        # 11) İstatistiksel özetler
         if "statistics" in features:
             for stat_name, stat_value in features["statistics"].items():
                 writer.writerow([
-                    username, "statistics", stat_name,
-                    "", "", stat_value, "", 0
+                    username,
+                    "statistics",
+                    stat_name,
+                    "",
+                    "",
+                    stat_value,
+                    "",
+                    0
                 ])
-        
+
+        # 12) Ritim metrikleri
         if "rhythm_metrics" in features:
             for metric_name, metric_value in features["rhythm_metrics"].items():
                 writer.writerow([
-                    username, "rhythm_metrics", metric_name,
-                    "", "", metric_value, "", 0
+                    username,
+                    "rhythm_metrics",
+                    metric_name,
+                    "",
+                    "",
+                    metric_value,
+                    "",
+                    0
                 ])
-        
+
+        # 13) Yazma hızı metrikleri
         if "typing_speed" in features:
             for speed_name, speed_value in features["typing_speed"].items():
                 writer.writerow([
-                    username, "typing_speed", speed_name,
-                    "", "", speed_value, "", 0
+                    username,
+                    "typing_speed",
+                    speed_name,
+                    "",
+                    "",
+                    speed_value,
+                    "",
+                    0
                 ])
-    
+
     logging.info(f"Gelişmiş biometrik özellikler CSV'ye kaydedildi: {filepath}")
