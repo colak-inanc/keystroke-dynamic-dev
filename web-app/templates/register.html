@@ -34,8 +34,12 @@
             font-family: 'Inter', sans-serif;
             background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #0f1419 100%);
             color: #e2e8f0;
-            overflow-x: hidden;
+            overflow: hidden;
             position: relative;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
         body::before {
@@ -62,6 +66,36 @@
                 0 8px 32px rgba(0, 0, 0, 0.4),
                 inset 0 1px 1px rgba(255, 255, 255, 0.05);
             position: relative;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        .content-wrapper {
+            width: 100%;
+            max-width: 1200px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2rem;
+            z-index: 10;
+        }
+
+        #mainContainer {
+            max-height: calc(100vh - 170px);
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+        }
+
+        #mainContainer::-webkit-scrollbar {
+            width: 6px;
+        }
+        #mainContainer::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        #mainContainer::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.4);
+            border-radius: 999px;
         }
         
         .glass-panel::before {
@@ -402,9 +436,66 @@
         }
         
         .hidden { display: none; }
+
+        @media (max-height: 900px) {
+            .content-wrapper {
+                gap: 1.5rem;
+            }
+            #mainContainer {
+                padding-top: 1.5rem;
+                padding-bottom: 1.5rem;
+            }
+        }
+
+        @media (max-height: 780px) {
+            .typing-area {
+                font-size: 1.1rem;
+                line-height: 1.7rem;
+            }
+            .stat-card {
+                padding: 1rem;
+            }
+            #mainContainer {
+                padding-top: 1.25rem;
+                padding-bottom: 1.25rem;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            body {
+                padding-top: 3rem;
+            }
+            .typing-area {
+                font-size: 1.2rem;
+                line-height: 1.9rem;
+            }
+            .stat-card {
+                padding: 1.25rem;
+            }
+        }
+
+        @media (max-width: 640px) {
+            body {
+                padding-top: 2rem;
+            }
+            .logo {
+                font-size: 1.5rem;
+            }
+            .typing-area {
+                font-size: 1rem;
+                line-height: 1.6rem;
+            }
+            .btn-primary,
+            .btn-success {
+                width: 100%;
+            }
+            #step1 .space-y-5 {
+                gap: 1.25rem;
+            }
+        }
     </style>
 </head>
-<body class="min-h-screen w-full flex flex-col items-center justify-center overflow-hidden relative py-8">
+<body class="min-h-screen w-full flex flex-col items-center justify-center overflow-hidden relative py-6 md:py-10 px-4 sm:px-6">
 
     <!-- Animated Background Orbs -->
     <div class="absolute top-0 left-0 w-96 h-96 bg-blue-500 rounded-full mix-blend-screen filter blur-3xl opacity-20 animate-blob"></div>
@@ -494,16 +585,17 @@
         </div>
     </div>
     
-    <!-- Logo Header -->
-    <div class="mb-8 text-center z-10">
-        <div class="logo mb-2 flex items-center justify-center gap-3">
-            <i class="fas fa-fingerprint"></i>
-            <span>KEYSTROKE DYNAMICS</span>
+    <div class="content-wrapper">
+        <!-- Logo Header -->
+        <div class="text-center">
+            <div class="logo mb-2 flex items-center justify-center gap-3">
+                <i class="fas fa-fingerprint"></i>
+                <span>KEYSTROKE DYNAMICS</span>
+            </div>
+            <p class="text-slate-400 text-sm tracking-wider uppercase">Advanced Biometric Authentication System</p>
         </div>
-        <p class="text-slate-400 text-sm tracking-wider uppercase">Advanced Biometric Authentication System</p>
-    </div>
 
-    <div class="glass-panel w-full max-w-5xl p-10 rounded-3xl z-10 relative transition-all duration-500" id="mainContainer">
+        <div class="glass-panel w-full px-4 sm:px-8 lg:px-10 py-8 rounded-3xl relative transition-all duration-500" id="mainContainer">
         
         <div id="step1" class="w-full max-w-md mx-auto">
             <div class="text-center mb-8">
@@ -522,13 +614,6 @@
                         Kullanıcı Adı
                     </label>
                     <input type="text" id="username" class="w-full bg-slate-800/50 border border-slate-700 rounded-xl px-5 py-4 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-white placeholder-slate-500 text-lg" placeholder="johndoe">
-                </div>
-                <div class="relative">
-                    <label class="block text-xs uppercase tracking-wider font-semibold text-slate-400 mb-2 flex items-center gap-2">
-                        <i class="fas fa-envelope text-purple-400"></i>
-                        E-Posta
-                    </label>
-                    <input type="email" id="email" class="w-full bg-slate-800/50 border border-slate-700 rounded-xl px-5 py-4 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all text-white placeholder-slate-500 text-lg" placeholder="john@example.com">
                 </div>
                 <button onclick="goToStep2()" class="w-full btn-primary text-white font-bold py-4 rounded-xl transition-all shadow-xl shadow-blue-500/30 mt-6 text-lg relative z-10 flex items-center justify-center gap-3">
                     <span>Biyometrik Analiz Başlat</span>
@@ -556,7 +641,7 @@
                 </p>
             </div>
 
-            <div class="grid grid-cols-4 gap-4 mb-8">
+            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
                 <div class="stat-card rounded-2xl p-5 text-center relative group">
                     <div class="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
                     <div class="relative z-10">
@@ -603,22 +688,22 @@
                 </div>
             </div>
 
-            <div id="textDisplay" class="typing-area mb-8 text-justify break-words p-8 bg-gradient-to-br from-slate-800/40 to-slate-900/40 rounded-2xl border border-slate-700/50 min-h-[200px] shadow-2xl backdrop-blur-sm relative overflow-hidden" onclick="focusInput()">
+            <div id="textDisplay" class="typing-area mb-8 text-justify break-words p-5 sm:p-8 bg-gradient-to-br from-slate-800/40 to-slate-900/40 rounded-2xl border border-slate-700/50 min-h-[200px] shadow-2xl backdrop-blur-sm relative overflow-hidden" onclick="focusInput()">
                 <div class="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5"></div>
                 <span class="text-slate-500 relative z-10">
                     <i class="fas fa-spinner fa-spin mr-2"></i>
-                    Metin yükleniyor...
+                    Size özel doğrulama metni oluşturuluyor...
                 </span>
             </div>
 
             <input type="text" id="hiddenInput" class="absolute opacity-0 top-0 left-0" autocomplete="off">
 
-            <div class="flex justify-between items-center mt-6">
-                <button onclick="resetTest()" class="text-slate-400 hover:text-white text-base flex items-center gap-3 transition-all hover:scale-105 px-6 py-3 rounded-xl hover:bg-slate-800/50">
+            <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mt-6">
+                <button onclick="resetTest()" class="text-slate-400 hover:text-white text-base flex items-center justify-center gap-3 transition-all hover:scale-105 px-6 py-3 rounded-xl hover:bg-slate-800/50 w-full sm:w-auto">
                     <i class="fas fa-redo-alt"></i>
                     <span class="font-semibold">Yeniden Başlat</span>
                 </button>
-                <button id="completeBtn" class="btn-success text-white px-10 py-4 rounded-xl font-bold opacity-50 cursor-not-allowed transition-all shadow-2xl text-lg relative z-10" disabled onclick="finishRegistration()">
+                <button id="completeBtn" class="btn-success text-white px-10 py-4 rounded-xl font-bold opacity-50 cursor-not-allowed transition-all shadow-2xl text-lg relative z-10 w-full sm:w-auto" disabled onclick="finishRegistration()">
                     <span class="flex items-center gap-3 relative z-10">
                         <i class="fas fa-check-circle"></i>
                         <span>Kaydı Tamamla</span>
@@ -628,6 +713,7 @@
             </div>
         </div>
 
+        </div>
     </div>
 
     <script>
@@ -677,7 +763,7 @@
 
         // --- Metin Getirme (Gemini API Simülasyonu) ---
         async function fetchText() {
-            textDisplay.innerHTML = '<span class="text-blue-400 animate-pulse">Metin Gemini\'den alınıyor...</span>';
+            textDisplay.innerHTML = '<span class="text-blue-400 animate-pulse">Size özel doğrulama metni oluşturuluyor...</span>';
             
             try {
                 const res = await fetch('/api/get-text');
@@ -918,7 +1004,7 @@
             
             const payload = {
                 username: document.getElementById('username').value,
-                email: document.getElementById('email').value,
+                email: "",
                 keystrokes: keystrokeData,
                 metadata: {
                     correct_keys: correctKeyCount,
@@ -937,17 +1023,12 @@
 
             const result = await res.json();
             if(result.status === 'success') {
-                const wpm = parseInt(wpmDisplay.textContent);
-                const time = timeDisplay.textContent;
-                
                 completeBtn.innerHTML = `<span class="flex items-center gap-2 relative z-10">
                     <i class="fas fa-check-circle"></i>
                     <span>Başarılı!</span>
                 </span>`;
                 
-                setTimeout(() => {
-                    showSuccessModal(accuracyRate, wpm, time, totalKeyPresses, result.keystroke_count);
-                }, 300);
+                window.location.href = '/';
             } else {
                 showErrorModal(result.detail || "Kayıt başarısız");
             }

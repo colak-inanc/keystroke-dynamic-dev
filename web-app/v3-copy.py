@@ -91,7 +91,7 @@ async def favicon():
 async def get_typing_text():
     if api_key:
         try:
-            prompt = "Bana klavye dinamiklerini ölçmek için harf çeşitliliği yüksek, 50-60 kelimelik, Türkçe, resmi ve akıcı bir paragraf yaz. Sadece metni döndür."
+            prompt = "Bana klavye dinamiklerini ölçmek için harf çeşitliliği yüksek, 50-60 kelimelik, Türkçe, resmi ve akıcı bir paragraf yaz. Metinde herhangi bir noktalama işareti olmasın. Sadece metni döndür."
             model = genai.GenerativeModel("gemini-2.5-flash")
             response = model.generate_content(prompt)
             return {"text": response.text}
