@@ -139,10 +139,25 @@ async def login_user(data: LoginRequest):
         letter_summary = summarize_letter_errors(features)
         sequence_data = prepare_sequence_for_model(data.keystrokes, features)
 
-        if sequence_data is None or len(sequence_data.shape) != 3:
+        if sequence_data is None:
+            logging.warning("Sequence data is None")
+            return await login_user_legacy(data)
+
+        # Handle Multi-Input (list of arrays) vs Single Input check
+        is_valid_input = False
+        if isinstance(sequence_data, list):
+             # Expecting [X_time, X_key]
+             if len(sequence_data) == 2 and len(sequence_data[0].shape) == 3:
+                 is_valid_input = True
+                 logging.info("Multi-Input detected: Time shape %s, Key shape %s", sequence_data[0].shape, sequence_data[1].shape)
+        elif isinstance(sequence_data, np.ndarray):
+             if len(sequence_data.shape) == 3:
+                 is_valid_input = True
+
+        if not is_valid_input:
             logging.warning(
                 "Sequence formatı uygun değil: %s",
-                sequence_data.shape if sequence_data is not None else "None"
+                type(sequence_data)
             )
             return await login_user_legacy(data)
 

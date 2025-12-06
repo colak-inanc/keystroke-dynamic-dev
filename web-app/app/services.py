@@ -38,151 +38,177 @@ def load_model():
     return _model
 
 
-def prepare_sequence_for_model(keystrokes: List[KeystrokeData], features: dict) -> np.ndarray:
+# Feature Engineering Constants
+TIME_SCALE = 7.0
+MAX_LATENCY = 3000.0 # 3 seconds max for clustering valid typing
+
+# 0 -> PAD (Reserved)
+# 1 -> UNK (Reserved)
+def get_stable_key_id(key: str) -> int:
+    if len(key) == 1:
+        # Shift ASCII by 2 to reserve 0 and 1
+        return ord(key) + 2
+    
+    special_map = {
+        "Backspace": 8 + 2,
+        "Tab": 9 + 2,
+        "Enter": 13 + 2,
+        "Shift": 16 + 2,
+        "Control": 17 + 2,
+        "Alt": 18 + 2,
+        "CapsLock": 20 + 2,
+        "Escape": 27 + 2,
+        "Space": 32 + 2,
+        "PageUp": 33 + 2,
+        "PageDown": 34 + 2,
+        "End": 35 + 2,
+        "Home": 36 + 2,
+        "ArrowLeft": 37 + 2,
+        "ArrowUp": 38 + 2,
+        "ArrowRight": 39 + 2,
+        "ArrowDown": 40 + 2,
+        "Insert": 45 + 2,
+        "Delete": 127 + 2
+    }
+    # Return mapped value or 1 (UNK) if unknown special key
+    return special_map.get(key, 1)
+
+
+def prepare_sequence_for_model(keystrokes: List[KeystrokeData], features: dict) -> list:
+    # Defaults
+    num_features = 5
+    target_length = 50
+
     loaded_model = load_model()
-    if loaded_model is None:
-        num_features = 3
-    else:
+    if loaded_model is not None:
         try:
             input_shape = loaded_model.input_shape
-            if isinstance(input_shape, (list, tuple)) and len(input_shape) > 0:
-                if isinstance(input_shape[0], (list, tuple)) and len(input_shape[0]) > 0:
-                    num_features = input_shape[0][-1]
-                    target_length = input_shape[0][1]
-                else:
-                    num_features = input_shape[-1] if len(input_shape) > 1 else 3
-                    target_length = input_shape[1] if len(input_shape) > 1 else 50
-            else:
-                num_features = 3
-                target_length = 50
-        except Exception:
-            num_features = 3
+            # Handle Multi-Input Model [(Batch, Time, Feat), (Batch, Time)]
+            if isinstance(input_shape, list) and len(input_shape) > 0:
+                # Use the first input (Timing) to determine shape
+                shape_time = input_shape[0]
+                if shape_time and len(shape_time) > 2:
+                    target_length = shape_time[1]
+                    num_features = shape_time[2]
+            
+            # Handle Single Input Model (Legacy)
+            elif isinstance(input_shape, tuple) and len(input_shape) > 2:
+                target_length = input_shape[1]
+                num_features = input_shape[2]
+                
+        except Exception as e:
+            logging.warning(f"Model shape detection failed: {e}, using defaults (50, 5)")
+            num_features = 5
             target_length = 50
 
-    if target_length is None:
-        target_length = 50
 
-    sequence = []
+    # Separate lists for the two inputs
+    raw_sequence_time = [] 
+    raw_sequence_keys = []
+
     keydown_events = {}
-    keyup_events = {}
     previous_keyup_time = None
     previous_keydown_time = None
-    previous_key = None
 
     for idx, event in enumerate(keystrokes):
         key = event.key
-        event_type = event.event_type
         timestamp = event.timestamp
+        event_type = event.event_type
 
         if event_type == "keydown":
             keydown_events[key] = timestamp
             previous_keydown_time = timestamp
-
-            if key in {"Backspace", "Shift"}:
-                continue
-
-            if previous_keyup_time is not None:
-                flight_time = timestamp - previous_keyup_time
-            else:
-                flight_time = 0.0
-
-            inter_key_delay = timestamp - keystrokes[idx - 1].timestamp if idx > 0 else 0.0
+            if key in {"Backspace", "Shift"}: continue
 
         elif event_type == "keyup":
-            keyup_events[key] = timestamp
-
             if key in {"Shift", "Backspace"}:
-                if key in keydown_events:
-                    del keydown_events[key]
+                if key in keydown_events: del keydown_events[key]
                 continue
 
             dwell_time = 0.0
             keydown_time = keydown_events.get(key)
-            if keydown_time is not None:
+            if keydown_time:
                 dwell_time = timestamp - keydown_time
                 del keydown_events[key]
+            
+            flight_time = (keydown_time - previous_keyup_time) if (previous_keyup_time and keydown_time) else 0.0
+            inter_key_delay = (timestamp - keystrokes[idx-1].timestamp) if idx > 0 else 0.0
 
-            if previous_keyup_time is not None and keydown_time is not None:
-                flight_time = keydown_time - previous_keyup_time
+            # Clamping (Outlier Removal)
+            dwell_time = min(dwell_time, MAX_LATENCY)
+            flight_time = min(flight_time, MAX_LATENCY)
+            inter_key_delay = min(inter_key_delay, MAX_LATENCY)
+
+            # Log1p Normalization using TIME_SCALE
+            norm_dwell = np.log1p(dwell_time) / TIME_SCALE
+            norm_flight = np.log1p(flight_time) / TIME_SCALE if flight_time > 0 else 0.0
+            norm_delay = np.log1p(inter_key_delay) / TIME_SCALE
+            
+            # Base features: [Dwell, Flight, Delay]
+            time_vector = [float(norm_dwell), float(norm_flight), float(norm_delay)]
+
+            # Feature 4: Pressure
+            time_vector.append(min(dwell_time / 200.0, 1.0))
+
+            # Feature 5: Down-Down Latency
+            if previous_keydown_time and keydown_time:
+                dd_lat = keydown_time - previous_keydown_time
+                dd_lat = min(dd_lat, MAX_LATENCY) # Clamp
+                time_vector.append(np.log1p(dd_lat) / TIME_SCALE)
             else:
-                flight_time = 0.0
+                time_vector.append(0.0)
 
-            inter_key_delay = timestamp - keystrokes[idx - 1].timestamp if idx > 0 else 0.0
+            # Pad time_vector if needed (though we fixed it to 5 features above)
+            # If loaded_model expects more features for timing, pad here
+            # For now we stick to 5 core timing features
+            
+            # Capture Key ID separately
+            key_id = get_stable_key_id(key)
 
-            # Use log1p for time normalization to handle high variance (long tail)
-            # log(1000) is approx 6.9, so dividing by 7.0 keeps most values in 0-1 range
-            normalized_dwell = np.log1p(dwell_time) / 7.0
-            normalized_flight = np.log1p(flight_time) / 7.0 if flight_time > 0 else 0.0
-            normalized_delay = np.log1p(inter_key_delay) / 7.0
+            raw_sequence_time.append(time_vector)
+            raw_sequence_keys.append(key_id)
 
-            feature_vector = [
-                float(normalized_dwell),
-                float(normalized_flight),
-                float(normalized_delay)
-            ]
-
-            if num_features >= 4:
-                key_pressure = min(dwell_time / 200.0, 1.0)
-                feature_vector.append(float(key_pressure))
-
-            if num_features >= 5:
-                if previous_keydown_time is not None and keydown_time is not None:
-                    down_down_latency = keydown_time - previous_keydown_time
-                    normalized_down_down = np.log1p(down_down_latency) / 7.0
-                else:
-                    normalized_down_down = 0.0
-                feature_vector.append(float(normalized_down_down))
-
-            if num_features >= 6:
-                # Simple hash for key code normalization
-                code_val = float(hash(event.code) % 1000) / 1000.0
-                feature_vector.append(code_val)
-
-            while len(feature_vector) < num_features:
-                feature_vector.append(0.0)
-
-            sequence.append(feature_vector[:num_features])
             previous_keyup_time = timestamp
-            previous_key = key
 
-    # Sliding Window Logic
-    sequences_list = []
-    
-    # If we don't have enough data for even one full sequence, pad it
-    if len(sequence) < target_length:
-        padded_seq = sequence.copy()
-        last_val = sequence[-1] if sequence else [0.0] * num_features
-        while len(padded_seq) < target_length:
-            padded_seq.append(last_val)
-        sequences_list.append(padded_seq)
+
+    # Sliding Window Logic for BOTH lists synchronously
+    final_time_sequences = []
+    final_key_sequences = []
+
+    # Helper to pad
+    def get_padded_window(seq, is_key=False):
+        res = list(seq)
+        if len(res) < target_length:
+            pad_val = 0 if is_key else [0.0] * 5
+            while len(res) < target_length:
+                res.append(pad_val)
+        return res[:target_length]
+
+    # If total length is short, just one padded sequence
+    if len(raw_sequence_time) < target_length:
+        final_time_sequences.append(get_padded_window(raw_sequence_time, is_key=False))
+        final_key_sequences.append(get_padded_window(raw_sequence_keys, is_key=True))
     else:
-        # Create sliding windows
-        step = target_length // 2  # 50% overlap
+        # Sliding windows
+        step = target_length // 2
         if step < 1: step = 1
         
-        for i in range(0, len(sequence) - target_length + 1, step):
-            window = sequence[i : i + target_length]
-            sequences_list.append(window)
+        for i in range(0, len(raw_sequence_time) - target_length + 1, step):
+            win_time = raw_sequence_time[i : i + target_length]
+            win_keys = raw_sequence_keys[i : i + target_length]
+            final_time_sequences.append(win_time)
+            final_key_sequences.append(win_keys)
             
-        # If the last window missed some data at the end, add a final window usually
-        if len(sequence) > target_length and (len(sequence) - target_length) % step != 0:
-             sequences_list.append(sequence[-target_length:])
+        # Last window check
+        remaining = len(raw_sequence_time)
+        if remaining > target_length and (remaining - target_length) % step != 0:
+            final_time_sequences.append(raw_sequence_time[-target_length:])
+            final_key_sequences.append(raw_sequence_keys[-target_length:])
 
-    # Final cleanup (NaN/Inf check) for all generated sequences
-    final_sequences = []
-    for seq in sequences_list:
-        clean_seq = []
-        for vec in seq:
-            clean_vec = []
-            for val in vec:
-                if np.isnan(val) or np.isinf(val):
-                    clean_vec.append(0.0)
-                else:
-                    clean_vec.append(val)
-            clean_seq.append(clean_vec)
-        final_sequences.append(clean_seq)
-
-    return np.array(final_sequences, dtype=np.float32)
+    X_time = np.array(final_time_sequences, dtype=np.float32)
+    X_key = np.array(final_key_sequences, dtype=np.int32)
+    
+    return [X_time, X_key]
 
 
 def calculate_similarity(user_features, stored_data):
