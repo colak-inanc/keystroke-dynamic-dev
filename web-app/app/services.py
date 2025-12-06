@@ -145,23 +145,44 @@ def prepare_sequence_for_model(keystrokes: List[KeystrokeData], features: dict) 
             previous_keyup_time = timestamp
             previous_key = key
 
-    # target_length is now dynamic
-
-    if len(sequence) == 0:
-        sequence = [[0.0] * num_features] * target_length
-    elif len(sequence) < target_length:
-        last_value = sequence[-1] if sequence else [0.0] * num_features
-        while len(sequence) < target_length:
-            sequence.append(last_value.copy())
+    # Sliding Window Logic
+    sequences_list = []
+    
+    # If we don't have enough data for even one full sequence, pad it
+    if len(sequence) < target_length:
+        padded_seq = sequence.copy()
+        last_val = sequence[-1] if sequence else [0.0] * num_features
+        while len(padded_seq) < target_length:
+            padded_seq.append(last_val)
+        sequences_list.append(padded_seq)
     else:
-        sequence = sequence[:target_length]
+        # Create sliding windows
+        step = target_length // 2  # 50% overlap
+        if step < 1: step = 1
+        
+        for i in range(0, len(sequence) - target_length + 1, step):
+            window = sequence[i : i + target_length]
+            sequences_list.append(window)
+            
+        # If the last window missed some data at the end, add a final window usually
+        if len(sequence) > target_length and (len(sequence) - target_length) % step != 0:
+             sequences_list.append(sequence[-target_length:])
 
-    for i in range(len(sequence)):
-        for j in range(num_features):
-            if np.isnan(sequence[i][j]) or np.isinf(sequence[i][j]):
-                sequence[i][j] = 0.0
+    # Final cleanup (NaN/Inf check) for all generated sequences
+    final_sequences = []
+    for seq in sequences_list:
+        clean_seq = []
+        for vec in seq:
+            clean_vec = []
+            for val in vec:
+                if np.isnan(val) or np.isinf(val):
+                    clean_vec.append(0.0)
+                else:
+                    clean_vec.append(val)
+            clean_seq.append(clean_vec)
+        final_sequences.append(clean_seq)
 
-    return np.array([sequence], dtype=np.float32)
+    return np.array(final_sequences, dtype=np.float32)
 
 
 def calculate_similarity(user_features, stored_data):

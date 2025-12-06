@@ -139,25 +139,37 @@ async def login_user(data: LoginRequest):
         letter_summary = summarize_letter_errors(features)
         sequence_data = prepare_sequence_for_model(data.keystrokes, features)
 
-        if sequence_data is None or len(sequence_data.shape) != 3 or sequence_data.shape[0] != 1:
+        if sequence_data is None or len(sequence_data.shape) != 3:
             logging.warning(
                 "Sequence formatı uygun değil: %s",
                 sequence_data.shape if sequence_data is not None else "None"
             )
             return await login_user_legacy(data)
 
-        prediction = loaded_model.predict(sequence_data, verbose=0)
-        logging.info("Model prediction shape: %s, Full prediction: %s", prediction.shape, prediction)
+        # Batch prediction for all sliding windows
+        predictions = loaded_model.predict(sequence_data, verbose=0)
+        logging.info("Model prediction shape: %s", predictions.shape)
 
-        raw_output = 0.0
-        if len(prediction.shape) == 1:
-            raw_output = float(prediction[0])
-        elif prediction.shape[1] == 1:
-            raw_output = float(prediction[0][0])
-        elif prediction.shape[1] == 2:
-            raw_output = float(prediction[0][1])
+        # Get confidence for each window
+        window_confidences = []
+        if len(predictions.shape) == 1:
+            window_confidences = predictions.flatten()
+        elif predictions.shape[1] == 1:
+            window_confidences = predictions.flatten()
+        elif predictions.shape[1] == 2:
+            # Binary classification (class 1 is positive)
+            window_confidences = predictions[:, 1]
         else:
-            raw_output = float(np.max(prediction[0]))
+            # Multi-class or other
+            window_confidences = np.max(predictions, axis=1)
+
+        # Voting / Averaging Logic
+        raw_output = float(np.mean(window_confidences))
+        min_conf = float(np.min(window_confidences))
+        max_conf = float(np.max(window_confidences))
+        
+        logging.info("Window confidences: %s", window_confidences)
+        logging.info("Voting Result -> Mean: %.4f, Min: %.4f, Max: %.4f", raw_output, min_conf, max_conf)
 
         confidence = max(0.0, min(1.0, raw_output))
         logging.info("Model raw output: %.8f, Confidence: %.8f (%.4f%%)", raw_output, confidence, confidence * 100)
