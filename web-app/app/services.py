@@ -48,12 +48,19 @@ def prepare_sequence_for_model(keystrokes: List[KeystrokeData], features: dict) 
             if isinstance(input_shape, (list, tuple)) and len(input_shape) > 0:
                 if isinstance(input_shape[0], (list, tuple)) and len(input_shape[0]) > 0:
                     num_features = input_shape[0][-1]
+                    target_length = input_shape[0][1]
                 else:
                     num_features = input_shape[-1] if len(input_shape) > 1 else 3
+                    target_length = input_shape[1] if len(input_shape) > 1 else 50
             else:
                 num_features = 3
+                target_length = 50
         except Exception:
             num_features = 3
+            target_length = 50
+
+    if target_length is None:
+        target_length = 50
 
     sequence = []
     keydown_events = {}
@@ -102,9 +109,11 @@ def prepare_sequence_for_model(keystrokes: List[KeystrokeData], features: dict) 
 
             inter_key_delay = timestamp - keystrokes[idx - 1].timestamp if idx > 0 else 0.0
 
-            normalized_dwell = min(dwell_time / 500.0, 2.0)
-            normalized_flight = min(flight_time / 500.0, 2.0) if flight_time > 0 else 0.0
-            normalized_delay = min(inter_key_delay / 1000.0, 2.0)
+            # Use log1p for time normalization to handle high variance (long tail)
+            # log(1000) is approx 6.9, so dividing by 7.0 keeps most values in 0-1 range
+            normalized_dwell = np.log1p(dwell_time) / 7.0
+            normalized_flight = np.log1p(flight_time) / 7.0 if flight_time > 0 else 0.0
+            normalized_delay = np.log1p(inter_key_delay) / 7.0
 
             feature_vector = [
                 float(normalized_dwell),
@@ -119,10 +128,15 @@ def prepare_sequence_for_model(keystrokes: List[KeystrokeData], features: dict) 
             if num_features >= 5:
                 if previous_keydown_time is not None and keydown_time is not None:
                     down_down_latency = keydown_time - previous_keydown_time
-                    normalized_down_down = min(down_down_latency / 500.0, 2.0)
+                    normalized_down_down = np.log1p(down_down_latency) / 7.0
                 else:
                     normalized_down_down = 0.0
                 feature_vector.append(float(normalized_down_down))
+
+            if num_features >= 6:
+                # Simple hash for key code normalization
+                code_val = float(hash(event.code) % 1000) / 1000.0
+                feature_vector.append(code_val)
 
             while len(feature_vector) < num_features:
                 feature_vector.append(0.0)
@@ -131,7 +145,7 @@ def prepare_sequence_for_model(keystrokes: List[KeystrokeData], features: dict) 
             previous_keyup_time = timestamp
             previous_key = key
 
-    target_length = 10
+    # target_length is now dynamic
 
     if len(sequence) == 0:
         sequence = [[0.0] * num_features] * target_length
@@ -676,13 +690,6 @@ def calculate_statistical_features(features: dict) -> dict:
         stats["up_up_latency_std"] = float(np.std(data))
         stats["up_up_latency_median"] = float(np.median(data))
 
-    if features.get("up_down_latencies"):
-        up_down_values = [u["latency"] for u in features["up_down_latencies"]]
-        data = np.array(up_down_values)
-        stats["up_down_latency_mean"] = float(np.mean(data))
-        stats["up_down_latency_std"] = float(np.std(data))
-        stats["up_down_latency_median"] = float(np.median(data))
-
     for metric in metrics:
         metric_values = features.get(metric, [])
         if metric_values:
@@ -858,7 +865,7 @@ def save_features_to_csv(features: dict, filepath: Path, username: str):
             writer.writerow([
                 username,
                 "timing",
-                "up_down_latency",
+                "flight_time",
                 from_key,
                 to_key,
                 up_down.get("latency", 0.0),

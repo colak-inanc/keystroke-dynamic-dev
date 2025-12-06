@@ -7,8 +7,9 @@ from pathlib import Path
 import google.generativeai as genai
 import numpy as np
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from app.models import LoginRequest, RegisterRequest
 from app.services import (
@@ -28,6 +29,38 @@ WEB_APP_DIR = Path(__file__).resolve().parent.parent
 templates = Jinja2Templates(directory=str(WEB_APP_DIR / "templates"))
 
 router = APIRouter()
+
+# for session management
+SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "biometric-auth-secret-key-change-in-production")
+SESSION_COOKIE_NAME = "biometric_session"
+SESSION_MAX_AGE = 3600 * 24  
+
+serializer = URLSafeTimedSerializer(SESSION_SECRET_KEY)
+
+
+def create_session_token(username: str) -> str:
+    return serializer.dumps({"username": username, "authenticated": True})
+
+
+def verify_session_token(token: str) -> dict | None:
+    try:
+        data = serializer.loads(token, max_age=SESSION_MAX_AGE)
+        if data.get("authenticated") and data.get("username"):
+            user_dir = DATA_DIR / data["username"]
+            if user_dir.exists():
+                return data
+        return None
+    except (BadSignature, SignatureExpired):
+        return None
+
+
+def get_current_user(request: Request) -> str | None:
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        return None
+    session_data = verify_session_token(token)
+    return session_data.get("username") if session_data else None
+
 
 api_key = os.getenv("GOOGLE_API_KEY")
 if api_key:
@@ -51,7 +84,13 @@ async def read_login(request: Request):
 
 @router.get("/dashboard", response_class=HTMLResponse)
 async def read_dashboard(request: Request):
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+    current_user = get_current_user(request)
+    if not current_user:
+        return RedirectResponse(url="/", status_code=303)
+    return templates.TemplateResponse(
+        "dashboard.html", 
+        {"request": request, "username": current_user}
+    )
 
 
 @router.get("/favicon.ico")
@@ -100,7 +139,7 @@ async def login_user(data: LoginRequest):
         letter_summary = summarize_letter_errors(features)
         sequence_data = prepare_sequence_for_model(data.keystrokes, features)
 
-        if sequence_data is None or len(sequence_data.shape) != 3 or sequence_data.shape[0] != 1 or sequence_data.shape[1] != 10:
+        if sequence_data is None or len(sequence_data.shape) != 3 or sequence_data.shape[0] != 1:
             logging.warning(
                 "Sequence formatı uygun değil: %s",
                 sequence_data.shape if sequence_data is not None else "None"
@@ -132,13 +171,23 @@ async def login_user(data: LoginRequest):
             except Exception as exc:  
                 logging.warning("Giriş oturumu kaydedilemedi: %s", exc)
 
-            return {
+            session_token = create_session_token(data.username)
+            response = JSONResponse(content={
                 "status": "success",
                 "username": data.username,
                 "confidence": confidence,
                 "message": "Kimlik doğrulandı",
                 "letter_error_summary": letter_summary
-            }
+            })
+            response.set_cookie(
+                key=SESSION_COOKIE_NAME,
+                value=session_token,
+                max_age=SESSION_MAX_AGE,
+                httponly=True,
+                samesite="lax",
+                secure=False  
+            )
+            return response
 
         logging.warning("Başarısız giriş denemesi (Model): %s (güven: %.2f)", data.username, confidence)
         try:
@@ -157,12 +206,32 @@ async def login_user(data: LoginRequest):
 
 
 @router.get("/api/user-stats")
-async def get_user_stats(username: str):
+async def get_user_stats(request: Request, username: str | None = None):
+    current_user = get_current_user(request)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Oturum açmanız gerekiyor")
+    
     try:
-        return get_user_stats_data(username)
+        return get_user_stats_data(current_user)
     except Exception as exc:  
         logging.error("Kullanıcı istatistikleri hatası: %s", exc)
         raise HTTPException(status_code=500, detail=f"İstatistikler alınamadı: {exc}") from exc
+
+
+@router.get("/api/me")
+async def get_current_user_info(request: Request):
+    current_user = get_current_user(request)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Oturum açmanız gerekiyor")
+    
+    return {"username": current_user, "authenticated": True}
+
+
+@router.post("/api/logout")
+async def logout(request: Request):
+    response = JSONResponse(content={"status": "success", "message": "Oturum sonlandırıldı"})
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    return response
 
 
 @router.post("/api/register")
