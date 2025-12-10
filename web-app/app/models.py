@@ -22,7 +22,9 @@ class RegisterRequest(BaseModel):
     username: str
     email: str
     keystrokes: List[KeystrokeData]
+    keystrokes_2: Optional[List[KeystrokeData]] = None
     metadata: Optional[SessionMetadata] = None
+    metadata_2: Optional[SessionMetadata] = None
 
 
 class LoginRequest(BaseModel):

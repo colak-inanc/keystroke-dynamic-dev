@@ -7,9 +7,24 @@
 body {
     font-family: 'Inter', sans-serif;
     background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #0f1419 100%);
+    background-attachment: fixed;
+    background-size: cover;
+    background-repeat: no-repeat;
     color: #e2e8f0;
-    overflow-x: hidden;
+    overflow: hidden;
+    /* User requested no scroll */
     position: relative;
+    height: 111.111vh;
+    /* Compensate for zoom 0.9 (100/0.9) */
+    width: 111.111vw;
+    /* Compensate for zoom 0.9 */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    zoom: 0.9;
+    -moz-transform: scale(0.9);
+    -moz-transform-origin: center center;
 }
 
 body::before {
@@ -19,7 +34,7 @@ body::before {
     left: 0;
     width: 100%;
     height: 100%;
-    background: 
+    background:
         radial-gradient(circle at 20% 50%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
         radial-gradient(circle at 80% 80%, rgba(168, 85, 247, 0.15) 0%, transparent 50%),
         radial-gradient(circle at 40% 20%, rgba(16, 185, 129, 0.1) 0%, transparent 50%);
@@ -32,7 +47,7 @@ body::before {
     backdrop-filter: blur(24px) saturate(180%);
     -webkit-backdrop-filter: blur(24px) saturate(180%);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 
+    box-shadow:
         0 8px 32px rgba(0, 0, 0, 0.4),
         inset 0 1px 1px rgba(255, 255, 255, 0.05);
     position: relative;
@@ -45,19 +60,37 @@ body::before {
     left: 0;
     right: 0;
     height: 1px;
-    background: linear-gradient(90deg, 
-        transparent 0%,
-        rgba(59, 130, 246, 0.5) 30%,
-        rgba(168, 85, 247, 0.5) 70%,
-        transparent 100%);
+    background: linear-gradient(90deg,
+            transparent 0%,
+            rgba(59, 130, 246, 0.5) 30%,
+            rgba(168, 85, 247, 0.5) 70%,
+            transparent 100%);
 }
 
 .typing-area {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 1.4rem;
-    line-height: 2.2rem;
+    font-size: 1rem;
+    line-height: 1.5rem;
     user-select: none;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.01em;
+}
+
+@media (max-width: 768px) {
+    .typing-area {
+        font-size: 1.1rem;
+        line-height: 1.8rem;
+        padding: 1.25rem !important;
+        min-height: 150px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .typing-area {
+        font-size: 1rem;
+        line-height: 1.6rem;
+        padding: 1rem !important;
+        min-height: 120px !important;
+    }
 }
 
 .letter {
@@ -78,9 +111,19 @@ body::before {
 }
 
 @keyframes shake {
-    0%, 100% { transform: translateX(0); }
-    25% { transform: translateX(-3px); }
-    75% { transform: translateX(3px); }
+
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+
+    25% {
+        transform: translateX(-3px);
+    }
+
+    75% {
+        transform: translateX(3px);
+    }
 }
 
 .letter.active::before {
@@ -97,14 +140,32 @@ body::before {
 }
 
 @keyframes blink {
-    0%, 49% { opacity: 1; }
-    50%, 100% { opacity: 0; }
+
+    0%,
+    49% {
+        opacity: 1;
+    }
+
+    50%,
+    100% {
+        opacity: 0;
+    }
 }
 
 @keyframes blob {
-    0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
-    33% { transform: translate(40px, -60px) scale(1.15) rotate(120deg); }
-    66% { transform: translate(-30px, 30px) scale(0.95) rotate(240deg); }
+
+    0%,
+    100% {
+        transform: translate(0, 0) scale(1) rotate(0deg);
+    }
+
+    33% {
+        transform: translate(40px, -60px) scale(1.15) rotate(120deg);
+    }
+
+    66% {
+        transform: translate(-30px, 30px) scale(0.95) rotate(240deg);
+    }
 }
 
 .animate-blob {
@@ -122,7 +183,7 @@ body::before {
 .logo {
     font-family: 'Orbitron', sans-serif;
     font-weight: 900;
-    font-size: 2rem;
+    /* font-size set in HTML / tailwind classes */
     background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -175,12 +236,15 @@ body::before {
         transform: translateY(100vh) translateX(0) scale(0);
         opacity: 0;
     }
+
     10% {
         opacity: 1;
     }
+
     90% {
         opacity: 1;
     }
+
     100% {
         transform: translateY(-100px) translateX(100px) scale(1);
         opacity: 0;
@@ -191,6 +255,7 @@ body::before {
     0% {
         transform: translateX(-100%);
     }
+
     100% {
         transform: translateX(100%);
     }
@@ -210,17 +275,22 @@ body::before {
 }
 
 @keyframes scan {
-    0%, 100% {
+
+    0%,
+    100% {
         transform: scale(1);
         opacity: 0.8;
     }
+
     50% {
         transform: scale(1.1);
         opacity: 1;
     }
 }
 
-.hidden { display: none; }
+.hidden {
+    display: none;
+}
 
 .modal-overlay {
     position: fixed;
@@ -237,6 +307,8 @@ body::before {
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.3s ease;
+    padding: 1rem;
+    /* Added padding for responsiveness */
 }
 
 .modal-overlay.show {
@@ -251,8 +323,9 @@ body::before {
     border-radius: 24px;
     padding: 0;
     max-width: 480px;
-    width: 90%;
-    box-shadow: 
+    width: 100%;
+    /* Changed from 90% to 100% for better control with max-width */
+    box-shadow:
         0 20px 60px rgba(0, 0, 0, 0.5),
         inset 0 1px 1px rgba(255, 255, 255, 0.1);
     transform: scale(0.9) translateY(20px);
@@ -272,16 +345,30 @@ body::before {
     left: 0;
     right: 0;
     height: 3px;
-    background: linear-gradient(90deg, 
-        #3b82f6 0%,
-        #8b5cf6 50%,
-        #ec4899 100%);
+    background: linear-gradient(90deg,
+            #3b82f6 0%,
+            #8b5cf6 50%,
+            #ec4899 100%);
 }
 
 .modal-header {
     padding: 32px 32px 24px;
     text-align: center;
     position: relative;
+}
+
+@media (max-width: 480px) {
+    .modal-header {
+        padding: 24px 20px 16px;
+    }
+
+    .modal-body {
+        padding: 0 20px 24px;
+    }
+
+    .modal-actions {
+        padding: 0 20px 24px;
+    }
 }
 
 .modal-icon {
@@ -311,9 +398,11 @@ body::before {
         transform: scale(0);
         opacity: 0;
     }
+
     50% {
         transform: scale(1.1);
     }
+
     100% {
         transform: scale(1);
         opacity: 1;

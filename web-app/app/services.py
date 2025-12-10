@@ -4,7 +4,7 @@ import logging
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import List, Union
 
 import numpy as np
 import tensorflow as tf
@@ -42,40 +42,96 @@ def load_model():
 TIME_SCALE = 7.0
 MAX_LATENCY = 3000.0 # 3 seconds max for clustering valid typing
 
-# 0 -> PAD (Reserved)
-# 1 -> UNK (Reserved)
+# --- CUSTOM VOCABULARY MAPPING START ---
+# Modelin embedding katmanı için sabit, dense (yoğun) bir index haritası oluşturuyoruz.
+# ASCII (ord) kullanmak yerine, sadece desteklediğimiz karakterleri indeksliyoruz.
+
+SPECIAL_KEYS = [
+    "<PAD>",      # 0: Padding (Dolgulama)
+    "<UNK>",      # 1: Bilinmeyen Karakterler
+    "Backspace",  # 2
+    "Tab",        # 3
+    "Enter",      # 4
+    "Shift",      # 5
+    "Control",    # 6
+    "Alt",        # 7
+    "CapsLock",   # 8
+    "Escape",     # 9
+    " ",          # 10 (Unified Space Token)
+    "PageUp", 
+    "PageDown", 
+    "End", 
+    "Home", 
+    "ArrowLeft", 
+    "ArrowUp", 
+    "ArrowRight", 
+    "ArrowDown", 
+    "Insert", 
+    "Delete",
+    "Meta",       # Windows key equivalent
+    "ContextMenu"
+]
+
+# Türkçe karakterler ve yaygın semboller
+TURKISH_CHARS = "çğışöü"
+# Standart basılabilir ASCII karakterleri (harfler, rakamlar, noktalama)
+# string.printable kullanımı yerine manuel/kontrollü liste daha güvenlidir ama
+# string.printable şunları içerir: digits + ascii_letters + punctuation + whitespace
+import string
+PRINTABLE_ASCII = string.digits + string.ascii_lowercase + string.punctuation
+
+# Master Vocabulary Listesi
+# Sıralama ÖNEMLİDİR. Bu liste değişirse MODEL RETRAIN edilmelidir.
+VOCAB_LIST = SPECIAL_KEYS + list(TURKISH_CHARS) + list(PRINTABLE_ASCII)
+
+# Tekrarları temizleyelim (örn. Space hem special hem printable'da olabilir)
+# Not: Sırayı korumak için dict.fromkeys kullanıyoruz (Python 3.7+ için sıralı).
+VOCAB_LIST = list(dict.fromkeys(VOCAB_LIST))
+
+# Map oluştur: "a" -> 45, "Enter" -> 4 gibi.
+CHAR_TO_IDX = {char: idx for idx, char in enumerate(VOCAB_LIST)}
+IDX_TO_CHAR = {idx: char for char, idx in CHAR_TO_IDX.items()}
+
+VOCAB_SIZE = len(VOCAB_LIST)
+UNK_IDX = CHAR_TO_IDX["<UNK>"]
+
 def get_stable_key_id(key: str) -> int:
-    if len(key) == 1:
-        # Shift ASCII by 2 to reserve 0 and 1
-        return ord(key) + 2
-    
-    special_map = {
-        "Backspace": 8 + 2,
-        "Tab": 9 + 2,
-        "Enter": 13 + 2,
-        "Shift": 16 + 2,
-        "Control": 17 + 2,
-        "Alt": 18 + 2,
-        "CapsLock": 20 + 2,
-        "Escape": 27 + 2,
-        "Space": 32 + 2,
-        "PageUp": 33 + 2,
-        "PageDown": 34 + 2,
-        "End": 35 + 2,
-        "Home": 36 + 2,
-        "ArrowLeft": 37 + 2,
-        "ArrowUp": 38 + 2,
-        "ArrowRight": 39 + 2,
-        "ArrowDown": 40 + 2,
-        "Insert": 45 + 2,
-        "Delete": 127 + 2
-    }
-    # Return mapped value or 1 (UNK) if unknown special key
-    return special_map.get(key, 1)
+    """
+    Verilen tuş ismini veya karakteri tamsayı indekse çevirir.
+    Eğer tuş vocabulary içinde yoksa <UNK> indeksini (1) döner.
+    """
+    if not key:
+        return UNK_IDX
+        
+    return CHAR_TO_IDX.get(key, UNK_IDX)
+# --- CUSTOM VOCABULARY MAPPING END ---
+
+
+
+
+def normalize_keystrokes(keystrokes: List[KeystrokeData]) -> List[KeystrokeData]:
+    """
+    Kullanıcıdan gelen tuş verilerini temizler ve standartlaştırır.
+    - Tek karakterlik tuşları (A, B, c) küçük harfe çevirir.
+    - Veri setinin tutarlılığını sağlar.
+    """
+    normalized = []
+    for k in keystrokes:
+        new_k = k.copy()
+        
+        if new_k.key == "Space":
+            new_k.key = " "
+        
+        if len(new_k.key) == 1:
+            new_k.key = new_k.key.lower()
+            
+        normalized.append(new_k)
+    return normalized
 
 
 def prepare_sequence_for_model(keystrokes: List[KeystrokeData], features: dict) -> list:
-    # Defaults
+    keystrokes = normalize_keystrokes(keystrokes)
+
     num_features = 5
     target_length = 50
 
@@ -83,9 +139,7 @@ def prepare_sequence_for_model(keystrokes: List[KeystrokeData], features: dict) 
     if loaded_model is not None:
         try:
             input_shape = loaded_model.input_shape
-            # Handle Multi-Input Model [(Batch, Time, Feat), (Batch, Time)]
             if isinstance(input_shape, list) and len(input_shape) > 0:
-                # Use the first input (Timing) to determine shape
                 shape_time = input_shape[0]
                 if shape_time and len(shape_time) > 2:
                     target_length = shape_time[1]
@@ -109,6 +163,7 @@ def prepare_sequence_for_model(keystrokes: List[KeystrokeData], features: dict) 
     keydown_events = {}
     previous_keyup_time = None
     previous_keydown_time = None
+
 
     for idx, event in enumerate(keystrokes):
         key = event.key
@@ -317,6 +372,9 @@ def save_login_session(username: str, keystrokes: List[KeystrokeData], features:
 async def login_user_legacy(data: LoginRequest):
     import pandas as pd  
 
+    # 1. Veriyi Kaydetmeden/İşlemeden Önce Normalize Et (Temiz Veri Seti)
+    data.keystrokes = normalize_keystrokes(data.keystrokes)
+
     user_dir = DATA_DIR / data.username
 
     csv_files = list(user_dir.glob("features_*.csv"))
@@ -389,10 +447,10 @@ async def login_user_legacy(data: LoginRequest):
     except Exception as exc:  
         logging.warning("Giriş oturumu kaydedilemedi: %s", exc)
 
-        return {
+    return {
         "status": "error",
-            "message": f"Klavye dinamikleri eşleşmiyor (güven: {confidence*100:.1f}%). Bu hesap size ait olmayabilir.",
-            "letter_error_summary": letter_summary
+        "message": f"Klavye dinamikleri eşleşmiyor (güven: {confidence*100:.1f}%). Bu hesap size ait olmayabilir.",
+        "letter_error_summary": letter_summary
     }
 
 
@@ -819,12 +877,15 @@ def calculate_typing_speed(keystrokes: List[KeystrokeData], typed_sequence: list
     return speed
 
 
-def save_features_to_csv(features: dict, filepath: Path, username: str):
+def save_features_to_csv(features_input: Union[dict, List[dict]], filepath: Path, username: str):
     def safe_get_key(item: dict, primary: str, fallback: str) -> str:
         val = item.get(primary)
         if val is None or val == "":
             return item.get(fallback, "")
         return val
+
+    # Normalize input to a list
+    features_list = features_input if isinstance(features_input, list) else [features_input]
 
     with open(filepath, "w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
@@ -837,265 +898,286 @@ def save_features_to_csv(features: dict, filepath: Path, username: str):
             "key_to",
             "value",
             "additional_data",
-            "sequence_index"
+            "sequence_index",
+            "session_index"
         ])
 
-        hold_times = features.get("hold_times", [])
-        if hold_times:
-            for idx, hold in enumerate(hold_times):
-                key_char = hold.get("key", "")
-                dwell = hold.get("dwell_time", 0.0)
+        for session_idx, features in enumerate(features_list):
+            hold_times = features.get("hold_times", [])
+            if hold_times:
+                for idx, hold in enumerate(hold_times):
+                    key_char = hold.get("key", "")
+                    dwell = hold.get("dwell_time", 0.0)
+                    additional = {
+                        "keydown_timestamp": hold.get("keydown_timestamp"),
+                        "keyup_timestamp": hold.get("keyup_timestamp"),
+                        "key_code": hold.get("key_code")
+                    }
+                    writer.writerow([
+                        username,
+                        "timing",
+                        "dwell_time",
+                        key_char,
+                        "",
+                        dwell,
+                        json.dumps(additional, ensure_ascii=False),
+                        idx,
+                        session_idx
+                    ])
+            else:
+                for idx, dwell in enumerate(features.get("dwell_times", [])):
+                    writer.writerow([
+                        username,
+                        "timing",
+                        "dwell_time",
+                        "",
+                        "",
+                        dwell,
+                        "",
+                        idx,
+                        session_idx
+                    ])
+
+            for idx, delay in enumerate(features.get("inter_key_delays", [])):
+                writer.writerow([
+                    username,
+                    "timing",
+                    "inter_key_delay",
+                    "",
+                    "",
+                    delay,
+                    "",
+                    idx,
+                    session_idx
+                ])
+
+            for idx, down_down in enumerate(features.get("down_down_latencies", [])):
+                from_key = safe_get_key(down_down, "from_key", "from_code")
+                to_key = safe_get_key(down_down, "to_key", "to_code")
+
                 additional = {
-                    "keydown_timestamp": hold.get("keydown_timestamp"),
-                    "keyup_timestamp": hold.get("keyup_timestamp"),
-                    "key_code": hold.get("key_code")
+                    "from_code": down_down.get("from_code"),
+                    "to_code": down_down.get("to_code")
                 }
+
                 writer.writerow([
                     username,
                     "timing",
-                    "dwell_time",
-                    key_char,
-                    "",
-                    dwell,
+                    "down_down_latency",
+                    from_key,
+                    to_key,
+                    down_down.get("latency", 0.0),
                     json.dumps(additional, ensure_ascii=False),
-                    idx
+                    idx,
+                    session_idx
                 ])
-        else:
-            for idx, dwell in enumerate(features.get("dwell_times", [])):
+
+            for idx, up_down in enumerate(features.get("up_down_latencies", [])):
+                from_key = safe_get_key(up_down, "from_key", "from_code")
+                to_key = safe_get_key(up_down, "to_key", "to_code")
+
                 writer.writerow([
                     username,
                     "timing",
-                    "dwell_time",
+                    "flight_time",
+                    from_key,
+                    to_key,
+                    up_down.get("latency", 0.0),
                     "",
-                    "",
-                    dwell,
-                    "",
-                    idx
+                    idx,
+                    session_idx
                 ])
 
-        for idx, delay in enumerate(features.get("inter_key_delays", [])):
-            writer.writerow([
-                username,
-                "timing",
-                "inter_key_delay",
-                "",
-                "",
-                delay,
-                "",
-                idx
-            ])
+            for idx, up_up in enumerate(features.get("up_up_latencies", [])):
+                from_key = safe_get_key(up_up, "from_key", "from_code")
+                to_key = safe_get_key(up_up, "to_key", "to_code")
 
-        for idx, down_down in enumerate(features.get("down_down_latencies", [])):
-            from_key = safe_get_key(down_down, "from_key", "from_code")
-            to_key = safe_get_key(down_down, "to_key", "to_code")
+                writer.writerow([
+                    username,
+                    "timing",
+                    "up_up_latency",
+                    from_key,
+                    to_key,
+                    up_up.get("latency", 0.0),
+                    "",
+                    idx,
+                    session_idx
+                ])
 
-            additional = {
-                "from_code": down_down.get("from_code"),
-                "to_code": down_down.get("to_code")
-            }
+            for idx, key_event in enumerate(features.get("key_events", [])):
+                writer.writerow([
+                    username,
+                    "raw_event",
+                    key_event.get("event_type", ""),
+                    key_event.get("key_char", ""),
+                    key_event.get("key_code", ""),
+                    key_event.get("timestamp", 0.0),
+                    "",
+                    idx,
+                    session_idx
+                ])
 
-            writer.writerow([
-                username,
-                "timing",
-                "down_down_latency",
-                from_key,
-                to_key,
-                down_down.get("latency", 0.0),
-                json.dumps(additional, ensure_ascii=False),
-                idx
-            ])
+            for idx, digraph in enumerate(features.get("digraph_times", [])):
+                writer.writerow([
+                    username,
+                    "n-gram",
+                    "digraph",
+                    digraph.get("from", ""),
+                    digraph.get("to", ""),
+                    digraph.get("time", 0.0),
+                    "",
+                    idx,
+                    session_idx
+                ])
 
-        for idx, up_down in enumerate(features.get("up_down_latencies", [])):
-            from_key = safe_get_key(up_down, "from_key", "from_code")
-            to_key = safe_get_key(up_down, "to_key", "to_code")
+            for idx, trigram in enumerate(features.get("trigram_times", [])):
+                keys_str = "->".join(trigram.get("keys", []))
+                writer.writerow([
+                    username,
+                    "n-gram",
+                    "trigram",
+                    keys_str,
+                    "",
+                    trigram.get("time", 0.0),
+                    "",
+                    idx,
+                    session_idx
+                ])
 
-            writer.writerow([
-                username,
-                "timing",
-                "flight_time",
-                from_key,
-                to_key,
-                up_down.get("latency", 0.0),
-                "",
-                idx
-            ])
+            for idx, four_gram in enumerate(features.get("four_gram_times", [])):
+                keys_str = "->".join(four_gram.get("keys", []))
+                writer.writerow([
+                    username,
+                    "n-gram",
+                    "four_gram",
+                    keys_str,
+                    "",
+                    four_gram.get("time", 0.0),
+                    "",
+                    idx,
+                    session_idx
+                ])
 
-        for idx, up_up in enumerate(features.get("up_up_latencies", [])):
-            from_key = safe_get_key(up_up, "from_key", "from_code")
-            to_key = safe_get_key(up_up, "to_key", "to_code")
-
-            writer.writerow([
-                username,
-                "timing",
-                "up_up_latency",
-                from_key,
-                to_key,
-                up_up.get("latency", 0.0),
-                "",
-                idx
-            ])
-
-        for idx, key_event in enumerate(features.get("key_events", [])):
-            writer.writerow([
-                username,
-                "raw_event",
-                key_event.get("event_type", ""),
-                key_event.get("key_char", ""),
-                key_event.get("key_code", ""),
-                key_event.get("timestamp", 0.0),
-                "",
-                idx
-            ])
-
-        for idx, digraph in enumerate(features.get("digraph_times", [])):
-            writer.writerow([
-                username,
-                "n-gram",
-                "digraph",
-                digraph.get("from", ""),
-                digraph.get("to", ""),
-                digraph.get("time", 0.0),
-                "",
-                idx
-            ])
-
-        for idx, trigram in enumerate(features.get("trigram_times", [])):
-            keys_str = "->".join(trigram.get("keys", []))
-            writer.writerow([
-                username,
-                "n-gram",
-                "trigram",
-                keys_str,
-                "",
-                trigram.get("time", 0.0),
-                "",
-                idx
-            ])
-
-        for idx, four_gram in enumerate(features.get("four_gram_times", [])):
-            keys_str = "->".join(four_gram.get("keys", []))
-            writer.writerow([
-                username,
-                "n-gram",
-                "four_gram",
-                keys_str,
-                "",
-                four_gram.get("time", 0.0),
-                "",
-                idx
-            ])
-
-        writer.writerow([
-            username,
-            "behavior",
-            "backspace_count",
-            "",
-            "",
-            features.get("backspace_count", 0),
-            "",
-            0
-        ])
-
-        for idx, latency in enumerate(features.get("backspace_latencies", [])):
             writer.writerow([
                 username,
                 "behavior",
-                "backspace_latency",
+                "backspace_count",
                 "",
                 "",
-                latency,
+                features.get("backspace_count", 0),
                 "",
-                idx
+                0,
+                session_idx
             ])
 
-        for idx, correction in enumerate(features.get("error_corrections", [])):
-            writer.writerow([
-                username,
-                "behavior",
-                "error_correction",
-                correction.get("char", ""),
-                "",
-                correction.get("latency", 0.0),
-                json.dumps({"position": correction.get("position")}, ensure_ascii=False),
-                idx
-            ])
-
-        for idx, pause in enumerate(features.get("pause_events", [])):
-            writer.writerow([
-                username,
-                "rhythm",
-                "pause",
-                pause.get("after_key", ""),
-                pause.get("before_key", ""),
-                pause.get("duration", 0.0),
-                json.dumps({"position": pause.get("position")}, ensure_ascii=False),
-                idx
-            ])
-
-        for idx, speed_change in enumerate(features.get("speed_changes", [])):
-            writer.writerow([
-                username,
-                "rhythm",
-                "speed_change",
-                "",
-                "",
-                speed_change,
-                "",
-                idx
-            ])
-
-        for idx, pressure in enumerate(features.get("key_pressure_estimate", [])):
-            writer.writerow([
-                username,
-                "pressure",
-                "key_pressure",
-                pressure.get("key", ""),
-                "",
-                pressure.get("pressure", 0.0),
-                json.dumps({"dwell": pressure.get("dwell")}, ensure_ascii=False),
-                idx
-            ])
-
-        if "statistics" in features:
-            for stat_name, stat_value in features["statistics"].items():
+            for idx, latency in enumerate(features.get("backspace_latencies", [])):
                 writer.writerow([
                     username,
-                    "statistics",
-                    stat_name,
+                    "behavior",
+                    "backspace_latency",
                     "",
                     "",
-                    stat_value,
+                    latency,
                     "",
-                    0
+                    idx,
+                    session_idx
                 ])
 
-        if "rhythm_metrics" in features:
-            for metric_name, metric_value in features["rhythm_metrics"].items():
+            for idx, correction in enumerate(features.get("error_corrections", [])):
                 writer.writerow([
                     username,
-                    "rhythm_metrics",
-                    metric_name,
+                    "behavior",
+                    "error_correction",
+                    correction.get("char", ""),
                     "",
-                    "",
-                    metric_value,
-                    "",
-                    0
+                    correction.get("latency", 0.0),
+                    json.dumps({"position": correction.get("position")}, ensure_ascii=False),
+                    idx,
+                    session_idx
                 ])
 
-        if "typing_speed" in features:
-            for speed_name, speed_value in features["typing_speed"].items():
+            for idx, pause in enumerate(features.get("pause_events", [])):
                 writer.writerow([
                     username,
-                    "typing_speed",
-                    speed_name,
-                    "",
-                    "",
-                    speed_value,
-                    "",
-                    0
+                    "rhythm",
+                    "pause",
+                    pause.get("after_key", ""),
+                    pause.get("before_key", ""),
+                    pause.get("duration", 0.0),
+                    json.dumps({"position": pause.get("position")}, ensure_ascii=False),
+                    idx,
+                    session_idx
                 ])
 
-    logging.info("Biometrik özellikler CSV'ye kaydedildi: %s", filepath)
+            for idx, speed_change in enumerate(features.get("speed_changes", [])):
+                writer.writerow([
+                    username,
+                    "rhythm",
+                    "speed_change",
+                    "",
+                    "",
+                    speed_change,
+                    "",
+                    idx,
+                    session_idx
+                ])
+
+            for idx, pressure in enumerate(features.get("key_pressure_estimate", [])):
+                writer.writerow([
+                    username,
+                    "pressure",
+                    "key_pressure",
+                    pressure.get("key", ""),
+                    "",
+                    pressure.get("pressure", 0.0),
+                    json.dumps({"dwell": pressure.get("dwell")}, ensure_ascii=False),
+                    idx,
+                    session_idx
+                ])
+
+            if "statistics" in features:
+                for stat_name, stat_value in features["statistics"].items():
+                    writer.writerow([
+                        username,
+                        "statistics",
+                        stat_name,
+                        "",
+                        "",
+                        stat_value,
+                        "",
+                        0,
+                        session_idx
+                    ])
+
+            if "rhythm_metrics" in features:
+                for metric_name, metric_value in features["rhythm_metrics"].items():
+                    writer.writerow([
+                        username,
+                        "rhythm_metrics",
+                        metric_name,
+                        "",
+                        "",
+                        metric_value,
+                        "",
+                        0,
+                        session_idx
+                    ])
+
+            if "typing_speed" in features:
+                for speed_name, speed_value in features["typing_speed"].items():
+                    writer.writerow([
+                        username,
+                        "typing_speed",
+                        speed_name,
+                        "",
+                        "",
+                        speed_value,
+                        "",
+                        0,
+                        session_idx
+                    ])
+
+    logging.info("Biometrik özellikler CSV'ye kaydedildi: %s (Toplam %d set)", filepath, len(features_list))
 
 
 def summarize_letter_errors(features: dict, top_n: int = 3) -> dict:

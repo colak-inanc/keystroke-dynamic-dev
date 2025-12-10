@@ -99,24 +99,31 @@ async def favicon():
 
 
 @router.get("/api/get-text")
-async def get_typing_text():
+async def get_typing_text(round: int = 1):
     if api_key:
         try:
             prompt = (
-                "Bana klavye dinamiklerini ölçmek için harf çeşitliliği yüksek, 50-60 kelimelik, "
+                "Bana klavye dinamiklerini ölçmek için harf çeşitliliği yüksek, 70-80 kelimelik, "
                 "Türkçe, resmi ve akıcı bir paragraf yaz. Metinde herhangi bir noktalama işareti olmasın. "
                 "Metindeki tüm harfler küçük olmalı."
                 "Sadece metni döndür."
+                "Türkçe karakterleri kullan."
+                "Klavye dinamiklerini analiz edebileceğim şekilde çeşitli harf kombinasyonları kullan."
             )
             model = genai.GenerativeModel("gemini-2.5-flash")
             response = model.generate_content(prompt)
             return {"text": response.text}
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  
             logging.warning("Gemini API hatası: %s - Mock data kullanılıyor", exc)
 
-    mock_text = "kurumsal yapının etkin şekilde sürdürülebilmesi için çeşitli birimlerin uyumlu biçimde hareket etmesi gerekmektedir bu kapsamda her çalışan görevlerini dikkatle yerine getirerek süreçlerin verimli ve dengeli biçimde ilerlemesine katkı sunar böylece kurum hedeflerine ulaşmada güçlü bir temel oluşturulur ve bu yaklaşım uzun vadeli gelişim planlarının uygulanmasını destekler ayrıca çalışanlar arasında bilgi akışını güçlendirir"
-    logging.info("Mock data döndürülüyor")
-    return {"text": mock_text}
+    mock_text_1 = "teknolojinin hızla geliştiği günümüz dünyasında yazılım mühendisliği ve yapay zeka uygulamaları hayatımızın her alanında köklü bir değişim yaratmaktadır sürdürülebilir kalkınma hedefleri doğrultusunda verimliliği artırmak için çağdaş ve yenilikçi çözümler üretmek zorundayız özellikle kapsamlı veri analizi yöntemleri sayesinde karmaşık problemlerin üstesinden gelmek artık çok daha erişilebilir hale gelmiştir bu süreçte profesyonel yaklaşım ve disiplinli çalışma prensipleri mutlak başarının temel anahtarını oluşturmaktadır geleceği şekillendiren bu yenilikler insanlık adına umut verici bir potansiyel taşımaktadır"
+    mock_text_2 = "küresel ölçekte yürütülen bilimsel çalışmalar toplumların refah seviyesini yükseltmek adına kritik bir rol oynamaktadır özellikle çevre bilincinin artmasıyla birlikte yenilenebilir enerji kaynaklarına yönelim hız kazanmıştır bu bağlamda rüzgar ve güneş enerjisi gibi alternatif yöntemler karbon ayak izini azaltmak için stratejik bir öneme sahiptir akademik disiplin ve sistematik araştırma teknikleri kullanılarak elde edilen veriler geleceğin inşasında sağlam bir temel oluşturur bilgiye erişimin kolaylaşmasıyla beraber inovasyon süreçleri de ivme kazanarak devam etmektedir"
+
+    selected_text = mock_text_2 if round == 2 else mock_text_1
+    
+    logging.info(f"Mock data döndürülüyor (Round: {round})")
+    return {"text": selected_text}
+
 
 
 @router.post("/api/login")
@@ -143,10 +150,8 @@ async def login_user(data: LoginRequest):
             logging.warning("Sequence data is None")
             return await login_user_legacy(data)
 
-        # Handle Multi-Input (list of arrays) vs Single Input check
         is_valid_input = False
         if isinstance(sequence_data, list):
-             # Expecting [X_time, X_key]
              if len(sequence_data) == 2 and len(sequence_data[0].shape) == 3:
                  is_valid_input = True
                  logging.info("Multi-Input detected: Time shape %s, Key shape %s", sequence_data[0].shape, sequence_data[1].shape)
@@ -161,24 +166,19 @@ async def login_user(data: LoginRequest):
             )
             return await login_user_legacy(data)
 
-        # Batch prediction for all sliding windows
         predictions = loaded_model.predict(sequence_data, verbose=0)
         logging.info("Model prediction shape: %s", predictions.shape)
 
-        # Get confidence for each window
         window_confidences = []
         if len(predictions.shape) == 1:
             window_confidences = predictions.flatten()
         elif predictions.shape[1] == 1:
             window_confidences = predictions.flatten()
         elif predictions.shape[1] == 2:
-            # Binary classification (class 1 is positive)
             window_confidences = predictions[:, 1]
         else:
-            # Multi-class or other
             window_confidences = np.max(predictions, axis=1)
 
-        # Voting / Averaging Logic
         raw_output = float(np.mean(window_confidences))
         min_conf = float(np.min(window_confidences))
         max_conf = float(np.max(window_confidences))
@@ -270,17 +270,33 @@ async def register_user(data: RegisterRequest):
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        raw_data_file = user_dir / f"raw_data_{timestamp}.json"
-        features = extract_keystroke_features(data.keystrokes)
-        letter_summary = summarize_letter_errors(features)
+        
+        def calculate_metadata(keystrokes, features, provided_metadata=None):
+            if provided_metadata:
+                return provided_metadata.dict()
+            return {
+                "accuracy_rate": features.get("typing_speed", {}).get("accuracy_rate", 0.0) * 100,
+                "wpm": features.get("typing_speed", {}).get("words_per_minute", 0.0),
+                "correct_keys": len([k for k in keystrokes if k.event_type == "keydown" and k.key != "Backspace"]),
+                "total_keys": len(keystrokes)
+            }
 
-        session_metadata = data.metadata.dict() if data.metadata else {
-            "accuracy_rate": features.get("typing_speed", {}).get("accuracy_rate", 0.0) * 100,
-            "wpm": features.get("typing_speed", {}).get("words_per_minute", 0.0),
-            "correct_keys": len([k for k in data.keystrokes if k.event_type == "keydown" and k.key != "Backspace"]),
-            "total_keys": len(data.keystrokes)
-        }
-
+        features_1 = extract_keystroke_features(data.keystrokes)
+        letter_summary_1 = summarize_letter_errors(features_1)
+        session_metadata_1 = calculate_metadata(data.keystrokes, features_1, data.metadata)
+        
+        features_list = [features_1]
+        
+        features_2 = None
+        letter_summary_2 = None
+        session_metadata_2 = None
+        
+        if data.keystrokes_2:
+            features_2 = extract_keystroke_features(data.keystrokes_2)
+            letter_summary_2 = summarize_letter_errors(features_2)
+            session_metadata_2 = calculate_metadata(data.keystrokes_2, features_2, data.metadata_2)
+            features_list.append(features_2)
+        
         raw_data = {
             "username": data.username,
             "email": data.email,
@@ -289,25 +305,38 @@ async def register_user(data: RegisterRequest):
             "success": True,
             "total_keystrokes": len(data.keystrokes),
             "keystrokes": [k.dict() for k in data.keystrokes],
-            "session_metadata": session_metadata,
-            "letter_error_summary": letter_summary
+            "session_metadata": session_metadata_1,
+            "letter_error_summary": letter_summary_1
         }
+        
+        if data.keystrokes_2:
+            raw_data.update({
+                "total_keystrokes_2": len(data.keystrokes_2),
+                "keystrokes_2": [k.dict() for k in data.keystrokes_2],
+                "session_metadata_2": session_metadata_2,
+                "letter_error_summary_2": letter_summary_2
+            })
 
+        raw_data_file = user_dir / f"raw_data_{timestamp}.json"
         with open(raw_data_file, "w", encoding="utf-8") as file:
             json.dump(raw_data, file, indent=2, ensure_ascii=False)
 
         features_file = user_dir / f"features_{timestamp}.csv"
-        save_features_to_csv(features, features_file, data.username)
+        save_features_to_csv(features_list, features_file, data.username)
 
-        logging.info("%s için veri kaydedildi: %s tuş vuruşu", data.username, len(data.keystrokes))
+        count_msg = f"{len(data.keystrokes)}"
+        if data.keystrokes_2:
+            count_msg += f" + {len(data.keystrokes_2)}"
+
+        logging.info("%s için veri kaydedildi: %s tuş vuruşu", data.username, count_msg)
 
         return {
             "status": "success",
-            "message": "Kayıt ve Biyometrik Veri Alındı",
+            "message": "Kayıt ve Biyometrik Veri (2 Set) Alındı" if data.keystrokes_2 else "Kayıt ve Biyometrik Veri Alındı",
             "username": data.username,
             "keystroke_count": len(data.keystrokes),
             "files_saved": [str(raw_data_file), str(features_file)],
-            "letter_error_summary": letter_summary
+            "letter_error_summary": letter_summary_1
         }
 
     except Exception as exc:  

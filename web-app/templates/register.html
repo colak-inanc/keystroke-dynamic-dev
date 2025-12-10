@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="tr">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,32 +9,41 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script>
         const originalWarn = console.warn;
-        console.warn = function(...args) {
+        console.warn = function (...args) {
             if (args[0] && typeof args[0] === 'string' && args[0].includes('cdn.tailwindcss.com')) {
                 return; // Tailwind uyarısını yoksay
             }
             originalWarn.apply(console, args);
         };
-        
+
         tailwind.config = {
             theme: {
                 extend: {}
             }
         }
     </script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@700;900&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="/static/css/register.css">
 </head>
-<body class="min-h-screen w-full flex flex-col items-center justify-center overflow-hidden relative py-6 md:py-10 px-4 sm:px-6">
+
+<body class="h-screen w-full flex flex-col items-center justify-center overflow-hidden relative px-4">
 
     <!-- Animated Background Orbs -->
-    <div class="absolute top-0 left-0 w-96 h-96 bg-blue-500 rounded-full mix-blend-screen filter blur-3xl opacity-20 animate-blob"></div>
-    <div class="absolute top-0 right-0 w-96 h-96 bg-purple-500 rounded-full mix-blend-screen filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
-    <div class="absolute bottom-0 left-1/2 w-96 h-96 bg-pink-500 rounded-full mix-blend-screen filter blur-3xl opacity-20 animate-blob animation-delay-4000"></div>
-    
+    <div
+        class="absolute top-0 left-0 w-96 h-96 bg-blue-500 rounded-full mix-blend-screen filter blur-3xl opacity-20 animate-blob">
+    </div>
+    <div
+        class="absolute top-0 right-0 w-96 h-96 bg-purple-500 rounded-full mix-blend-screen filter blur-3xl opacity-20 animate-blob animation-delay-2000">
+    </div>
+    <div
+        class="absolute bottom-0 left-1/2 w-96 h-96 bg-pink-500 rounded-full mix-blend-screen filter blur-3xl opacity-20 animate-blob animation-delay-4000">
+    </div>
+
     <!-- Particles -->
     <div id="particles-container"></div>
-    
+
     <!-- Success Modal -->
     <div id="successModal" class="modal-overlay hidden">
         <div class="modal-content">
@@ -41,7 +51,8 @@
                 <div class="success-icon">
                     <i class="fas fa-check text-white text-4xl"></i>
                 </div>
-                <h2 class="text-3xl font-bold bg-gradient-to-r from-emerald-400 via-green-400 to-teal-400 bg-clip-text text-transparent mb-2">
+                <h2
+                    class="text-3xl font-bold bg-gradient-to-r from-emerald-400 via-green-400 to-teal-400 bg-clip-text text-transparent mb-2">
                     Kayıt Başarılı!
                 </h2>
                 <p class="text-slate-300 text-sm">
@@ -49,7 +60,7 @@
                     Biyometrik profiliniz oluşturuldu
                 </p>
             </div>
-            
+
             <div class="modal-body">
                 <div class="mb-6">
                     <h3 class="text-lg font-semibold text-white mb-3 flex items-center gap-2">
@@ -75,8 +86,9 @@
                         </div>
                     </div>
                 </div>
-                
-                <div class="bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/20 rounded-xl p-4">
+
+                <div
+                    class="bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/20 rounded-xl p-4">
                     <div class="flex items-start gap-3">
                         <div class="flex-shrink-0">
                             <i class="fas fa-database text-blue-400 text-xl"></i>
@@ -84,7 +96,7 @@
                         <div>
                             <h4 class="text-sm font-semibold text-white mb-1">Biometrik Veriler</h4>
                             <p class="text-xs text-slate-300">
-                                <span id="modalFeatures" class="font-bold text-blue-400">320</span> 
+                                <span id="modalFeatures" class="font-bold text-blue-400">320</span>
                                 biometrik özellik başarıyla kaydedildi.
                             </p>
                             <div class="mt-2 flex flex-wrap gap-1">
@@ -102,9 +114,10 @@
                     </div>
                 </div>
             </div>
-            
+
             <div class="modal-footer">
-                <button onclick="closeModal()" class="btn-primary text-white font-bold py-3 px-8 rounded-xl transition-all shadow-xl w-full relative z-10">
+                <button onclick="closeModal()"
+                    class="btn-primary text-white font-bold py-3 px-8 rounded-xl transition-all shadow-xl w-full relative z-10">
                     <span class="flex items-center justify-center gap-2 relative z-10">
                         <i class="fas fa-check-circle"></i>
                         <span>Tamam</span>
@@ -113,7 +126,7 @@
             </div>
         </div>
     </div>
-    
+
     <div class="content-wrapper">
         <!-- Logo Header -->
         <div class="text-center">
@@ -124,123 +137,138 @@
             <p class="text-slate-400 text-sm tracking-wider uppercase">Advanced Biometric Authentication System</p>
         </div>
 
-        <div class="glass-panel w-full px-4 sm:px-8 lg:px-10 py-8 rounded-3xl relative transition-all duration-500" id="mainContainer">
-        
-        <div id="step1" class="w-full max-w-md mx-auto">
-            <div class="text-center mb-8">
-                <div class="inline-block p-4 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-2xl mb-4">
-                    <i class="fas fa-user-shield text-5xl text-blue-400"></i>
-                </div>
-                <h2 class="text-4xl font-bold text-center mb-3 bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-                    Hesap Oluştur
-                </h2>
-            </div>
-            
-            <div class="space-y-5">
-                <div class="relative">
-                    <label class="block text-xs uppercase tracking-wider font-semibold text-slate-400 mb-2 flex items-center gap-2">
-                        <i class="fas fa-user text-blue-400"></i>
-                        Kullanıcı Adı
-                    </label>
-                    <input type="text" id="username" class="w-full bg-slate-800/50 border border-slate-700 rounded-xl px-5 py-4 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-white placeholder-slate-500 text-lg" placeholder="johndoe">
-                </div>
-                <button onclick="goToStep2()" class="w-full btn-primary text-white font-bold py-4 rounded-xl transition-all shadow-xl shadow-blue-500/30 mt-6 text-lg relative z-10 flex items-center justify-center gap-3">
-                    <span>Biyometrik Analiz Başlat</span>
-                    <i class="fas fa-arrow-right"></i>
-                </button>
-            </div>
-        </div>
+        <div class="glass-panel w-full max-w-lg md:max-w-2xl lg:max-w-4xl p-6 md:p-10 rounded-2xl md:rounded-3xl relative transition-all duration-500"
+            id="mainContainer">
 
-        <div id="step2" class="hidden w-full">
-            <div class="text-center mb-6">
-                <h3 class="text-3xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-2 flex items-center justify-center gap-3">
-                    <i class="fas fa-brain"></i>
-                    Klavye Dinamikleri Analizi
-                </h3>
-                
-                <div class="w-full bg-slate-800/50 rounded-full h-3 mb-2 relative overflow-hidden border border-slate-700">
-                    <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent animate-shimmer"></div>
-                    <div id="progressBar" class="progress-bar bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 h-full rounded-full relative z-10" style="width: 0%"></div>
-                </div>
-                <p class="text-sm text-slate-400 font-mono">
-                    <span id="progressText" class="text-blue-400 font-bold">0</span>
-                    <span class="mx-1">/</span>
-                    <span id="totalChars" class="text-purple-400 font-bold">0</span>
-                    <span class="ml-2 text-slate-500">karakterler</span>
-                </p>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
-                <div class="stat-card rounded-2xl p-5 text-center relative group">
-                    <div class="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <div class="relative z-10">
-                        <div class="flex items-center justify-center gap-2 text-xs text-slate-400 mb-2 uppercase tracking-wider font-semibold">
-                            <i class="fas fa-tachometer-alt text-blue-400"></i>
-                            <span>WPM</span>
-                        </div>
-                        <div id="wpmDisplay" class="text-4xl font-bold text-blue-400 glow-text font-mono">0</div>
-                        <div class="text-xs text-slate-500 mt-1">kelime/dakika</div>
+            <div id="step1" class="w-full max-w-md mx-auto">
+                <div class="text-center mb-6">
+                    <div class="inline-block p-3 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-xl mb-3">
+                        <i class="fas fa-user-shield text-4xl text-blue-400"></i>
                     </div>
+                    <h2
+                        class="text-2xl font-bold text-center mb-2 bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                        Hesap Oluştur
+                    </h2>
                 </div>
-                <div class="stat-card rounded-2xl p-5 text-center relative group">
-                    <div class="absolute inset-0 bg-gradient-to-br from-green-500/10 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <div class="relative z-10">
-                        <div class="flex items-center justify-center gap-2 text-xs text-slate-400 mb-2 uppercase tracking-wider font-semibold">
-                            <i class="fas fa-bullseye text-green-400"></i>
-                            <span>Doğruluk</span>
-                        </div>
-                        <div id="accuracyDisplay" class="text-4xl font-bold text-green-400 glow-text font-mono">100%</div>
-                        <div class="text-xs text-slate-500 mt-1">doğruluk oranı</div>
-                    </div>
-                </div>
-                <div class="stat-card rounded-2xl p-5 text-center relative group">
-                    <div class="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <div class="relative z-10">
-                        <div class="flex items-center justify-center gap-2 text-xs text-slate-400 mb-2 uppercase tracking-wider font-semibold">
-                            <i class="fas fa-stopwatch text-purple-400"></i>
-                            <span>Süre</span>
-                        </div>
-                        <div id="timeDisplay" class="text-4xl font-bold text-purple-400 glow-text font-mono">0s</div>
-                        <div class="text-xs text-slate-500 mt-1">geçen zaman</div>
-                    </div>
-                </div>
-                <div class="stat-card rounded-2xl p-5 text-center relative group">
-                    <div class="absolute inset-0 bg-gradient-to-br from-orange-500/10 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <div class="relative z-10">
-                        <div class="flex items-center justify-center gap-2 text-xs text-slate-400 mb-2 uppercase tracking-wider font-semibold">
-                            <i class="fas fa-keyboard text-orange-400"></i>
-                            <span>Tuşlar</span>
-                        </div>
-                        <div id="keystrokeDisplay" class="text-4xl font-bold text-orange-400 glow-text font-mono">0</div>
-                        <div class="text-xs text-slate-500 mt-1">tuş vuruşu</div>
-                    </div>
-                </div>
-            </div>
 
-            <div id="textDisplay" class="typing-area mb-8 text-justify break-words p-5 sm:p-8 bg-gradient-to-br from-slate-800/40 to-slate-900/40 rounded-2xl border border-slate-700/50 min-h-[200px] shadow-2xl backdrop-blur-sm relative overflow-hidden" onclick="focusInput()">
-                <div class="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5"></div>
-                <span class="text-slate-500 relative z-10">
-                    <i class="fas fa-spinner fa-spin mr-2"></i>
-                    Size özel doğrulama metni oluşturuluyor...
-                </span>
-            </div>
-
-            <input type="text" id="hiddenInput" class="absolute opacity-0 top-0 left-0" autocomplete="off">
-
-            <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mt-6">
-                <button onclick="resetTest()" class="text-slate-400 hover:text-white text-base flex items-center justify-center gap-3 transition-all hover:scale-105 px-6 py-3 rounded-xl hover:bg-slate-800/50 w-full sm:w-auto">
-                    <i class="fas fa-redo-alt"></i>
-                    <span class="font-semibold">Yeniden Başlat</span>
-                </button>
-                <button id="completeBtn" class="btn-success text-white px-10 py-4 rounded-xl font-bold opacity-50 cursor-not-allowed transition-all shadow-2xl text-lg relative z-10 w-full sm:w-auto" disabled onclick="finishRegistration()">
-                    <span class="flex items-center gap-3 relative z-10">
-                        <i class="fas fa-check-circle"></i>
-                        <span>Kaydı Tamamla</span>
+                <div class="space-y-4">
+                    <div class="relative">
+                        <label
+                            class="block text-xs uppercase tracking-wider font-semibold text-slate-400 mb-1 flex items-center gap-2">
+                            <i class="fas fa-user text-blue-400"></i>
+                            Kullanıcı Adı
+                        </label>
+                        <input type="text" id="username"
+                            class="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-white placeholder-slate-500 text-sm"
+                            placeholder="johndoe">
+                    </div>
+                    <button onclick="goToStep2()"
+                        class="w-full btn-primary text-white font-bold py-3 rounded-lg transition-all shadow-xl shadow-blue-500/30 mt-4 text-sm relative z-10 flex items-center justify-center gap-3">
+                        <span>Biyometrik Analiz Başlat</span>
                         <i class="fas fa-arrow-right"></i>
-                    </span>
-                </button>
+                    </button>
+                </div>
             </div>
-        </div>
+
+            <div id="step2" class="hidden w-full">
+                <div class="text-center mb-6">
+                    <h3
+                        class="text-3xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-2 flex items-center justify-center gap-3">
+                        <i class="fas fa-brain"></i>
+                        Klavye Dinamikleri Analizi
+                    </h3>
+
+                    <div
+                        class="w-full bg-slate-800/50 rounded-full h-3 mb-2 relative overflow-hidden border border-slate-700">
+                        <div
+                            class="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent animate-shimmer">
+                        </div>
+                        <div id="progressBar"
+                            class="progress-bar bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 h-full rounded-full relative z-10"
+                            style="width: 0%"></div>
+                    </div>
+                    <p class="text-sm text-slate-400 font-mono">
+                        <span id="progressText" class="text-blue-400 font-bold">0</span>
+                        <span class="mx-1">/</span>
+                        <span id="totalChars" class="text-purple-400 font-bold">0</span>
+                        <span class="ml-2 text-slate-500">karakterler</span>
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                    <div class="stat-card rounded-xl p-3 text-center relative group">
+                        <div class="relative z-10">
+                            <div
+                                class="flex items-center justify-center gap-1 text-[10px] text-slate-400 mb-1 uppercase tracking-wider font-semibold">
+                                <i class="fas fa-tachometer-alt text-blue-400"></i>
+                                <span>WPM</span>
+                            </div>
+                            <div id="wpmDisplay" class="text-2xl font-bold text-blue-400 glow-text font-mono">0</div>
+                        </div>
+                    </div>
+                    <div class="stat-card rounded-xl p-3 text-center relative group">
+                        <div class="relative z-10">
+                            <div
+                                class="flex items-center justify-center gap-1 text-[10px] text-slate-400 mb-1 uppercase tracking-wider font-semibold">
+                                <i class="fas fa-bullseye text-green-400"></i>
+                                <span>Doğruluk</span>
+                            </div>
+                            <div id="accuracyDisplay" class="text-2xl font-bold text-green-400 glow-text font-mono">100%
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-card rounded-xl p-3 text-center relative group">
+                        <div class="relative z-10">
+                            <div
+                                class="flex items-center justify-center gap-1 text-[10px] text-slate-400 mb-1 uppercase tracking-wider font-semibold">
+                                <i class="fas fa-stopwatch text-purple-400"></i>
+                                <span>Süre</span>
+                            </div>
+                            <div id="timeDisplay" class="text-2xl font-bold text-purple-400 glow-text font-mono">0s
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-card rounded-xl p-3 text-center relative group">
+                        <div class="relative z-10">
+                            <div
+                                class="flex items-center justify-center gap-1 text-[10px] text-slate-400 mb-1 uppercase tracking-wider font-semibold">
+                                <i class="fas fa-keyboard text-orange-400"></i>
+                                <span>Tuşlar</span>
+                            </div>
+                            <div id="keystrokeDisplay" class="text-2xl font-bold text-orange-400 glow-text font-mono">0
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="textDisplay"
+                    class="typing-area mb-8 text-justify break-words p-5 sm:p-8 bg-gradient-to-br from-slate-800/40 to-slate-900/40 rounded-2xl border border-slate-700/50 min-h-[200px] shadow-2xl backdrop-blur-sm relative overflow-hidden"
+                    onclick="focusInput()">
+                    <div class="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5"></div>
+                    <span class="text-slate-500 relative z-10">
+                        <i class="fas fa-spinner fa-spin mr-2"></i>
+                        Size özel doğrulama metni oluşturuluyor...
+                    </span>
+                </div>
+
+                <input type="text" id="hiddenInput" class="absolute opacity-0 top-0 left-0" autocomplete="off">
+
+                <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mt-6">
+                    <button onclick="resetTest()"
+                        class="text-slate-400 hover:text-white text-base flex items-center justify-center gap-3 transition-all hover:scale-105 px-6 py-3 rounded-xl hover:bg-slate-800/50 w-full sm:w-auto">
+                        <i class="fas fa-redo-alt"></i>
+                        <span class="font-semibold">Yeniden Başlat</span>
+                    </button>
+                    <button id="completeBtn"
+                        class="btn-success text-white px-10 py-4 rounded-xl font-bold opacity-50 cursor-not-allowed transition-all shadow-2xl text-lg relative z-10 w-full sm:w-auto"
+                        disabled onclick="finishRegistration()">
+                        <span class="flex items-center gap-3 relative z-10">
+                            <span>Sonraki Adım</span>
+                            <i class="fas fa-arrow-right"></i>
+                        </span>
+                    </button>
+                </div>
+            </div>
 
         </div>
     </div>
@@ -258,7 +286,12 @@
         let correctKeyCount = 0;
         let testStartTime = null;
         let timerInterval = null;
-        
+
+        // Double collection state
+        let currentRound = 1;
+        let firstRoundData = null;
+        let firstRoundMetadata = null;
+
         const step1 = document.getElementById('step1');
         const step2 = document.getElementById('step2');
         const textDisplay = document.getElementById('textDisplay');
@@ -275,27 +308,49 @@
         // --- Adım Geçişleri ---
         async function goToStep2() {
             const username = document.getElementById('username').value;
-            if(!username) return alert("Lütfen kullanıcı adı girin.");
+            if (!username) return alert("Lütfen kullanıcı adı girin.");
 
             // Animasyonlu geçiş
             step1.classList.add('opacity-0', 'translate-x-[-20px]');
             setTimeout(async () => {
                 step1.classList.add('hidden');
                 step2.classList.remove('hidden');
-                
+
+                // Add round indicator if not exists
+                if (!document.getElementById('roundIndicator')) {
+                    const header = step2.querySelector('.text-center');
+                    const indicator = document.createElement('div');
+                    indicator.id = 'roundIndicator';
+                    indicator.className = 'flex items-center justify-center gap-4 mb-6';
+                    indicator.innerHTML = `
+                        <div class="flex items-center gap-2">
+                            <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold shadow-lg shadow-blue-500/50 animate-pulse">1</div>
+                            <span class="text-blue-400 text-sm font-bold tracking-wide">Profil Analizi</span>
+                        </div>
+                        <div class="w-16 h-1 bg-slate-700 rounded-full overflow-hidden">
+                            <div class="h-full bg-blue-500/50 w-1/2 rounded-full"></div>
+                        </div>
+                        <div class="flex items-center gap-2 opacity-50">
+                            <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white text-xs font-bold ring-1 ring-slate-600">2</div>
+                            <span class="text-slate-400 text-sm font-semibold">Doğrulama</span>
+                        </div>
+                    `;
+                    header.insertBefore(indicator, header.children[1]); // Insert after title
+                }
+
                 // Metni Getir
                 await fetchText();
-                
-                step2.classList.add('animate-fadeIn'); // Basit bir CSS animasyonu eklenebilir
+
+                step2.classList.add('animate-fadeIn');
             }, 300);
         }
 
         // --- Metin Getirme (Gemini API Simülasyonu) ---
         async function fetchText() {
             textDisplay.innerHTML = '<span class="text-blue-400 animate-pulse">Size özel doğrulama metni oluşturuluyor...</span>';
-            
+
             try {
-                const res = await fetch('/api/get-text');
+                const res = await fetch(`/api/get-text?round=${currentRound}`);
                 const data = await res.json();
                 targetText = data.text;
                 renderText();
@@ -335,11 +390,11 @@
             const progress = targetText.length > 0 ? (currentIndex / targetText.length) * 100 : 0;
             progressBar.style.width = progress + '%';
             progressText.textContent = currentIndex;
-            
+
             const totalPresses = correctKeyCount + incorrectKeyCount;
             const accuracy = totalPresses > 0 ? (correctKeyCount / totalPresses) * 100 : 100;
             accuracyDisplay.textContent = accuracy.toFixed(1) + '%';
-            
+
             if (accuracy >= 95) {
                 accuracyDisplay.classList.add('text-green-400');
                 accuracyDisplay.classList.remove('text-yellow-400', 'text-red-400');
@@ -350,20 +405,20 @@
                 accuracyDisplay.classList.add('text-red-400');
                 accuracyDisplay.classList.remove('text-green-400', 'text-yellow-400');
             }
-            
-            const realKeystrokes = keystrokeData.filter(k => 
-                k.event_type === 'keydown' && 
-                !k.is_modifier && 
+
+            const realKeystrokes = keystrokeData.filter(k =>
+                k.event_type === 'keydown' &&
+                !k.is_modifier &&
                 k.key !== 'Backspace'
             ).length;
             keystrokeDisplay.textContent = realKeystrokes;
-            
+
             if (testStartTime) {
                 const elapsedSeconds = (performance.now() - testStartTime) / 1000;
                 const words = currentIndex / 5;
                 const wpm = elapsedSeconds > 0 ? Math.round((words / elapsedSeconds) * 60) : 0;
                 wpmDisplay.textContent = wpm;
-                
+
                 if (wpm >= 60) {
                     wpmDisplay.classList.add('text-green-400');
                     wpmDisplay.classList.remove('text-blue-400', 'text-yellow-400');
@@ -419,7 +474,7 @@
 
             const letters = document.querySelectorAll('.letter');
             const expectedChar = currentIndex < targetText.length ? targetText[currentIndex] : null;
-            
+
             // Backspace Mantığı
             if (e.key === "Backspace") {
                 keystrokeData.push({
@@ -432,7 +487,7 @@
                     shift_pressed: shiftPressed,
                     position: currentIndex
                 });
-                
+
                 if (currentIndex > 0) {
                     currentIndex--;
                     letters[currentIndex].className = 'letter';
@@ -446,7 +501,7 @@
 
             // Normal tuş - doğruluk kontrolü yap
             const isCorrect = e.key === expectedChar;
-            
+
             // Veri Kaydı - GELİŞMİŞ
             keystrokeData.push({
                 key: e.key,
@@ -464,7 +519,7 @@
 
             // İstatistik güncelle
             startTimer();
-            
+
             if (isCorrect) {
                 correctKeyCount++;
             } else {
@@ -477,7 +532,7 @@
                 } else {
                     letters[currentIndex].classList.add('incorrect');
                 }
-                
+
                 currentIndex++;
                 updateActiveLetter();
                 updateStats();
@@ -487,6 +542,11 @@
                     completeBtn.disabled = false;
                     completeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
                     completeBtn.classList.add('scale-105', 'shadow-emerald-500/50');
+                    if (currentRound === 1) {
+                        completeBtn.innerHTML = `<span class="flex items-center gap-3 relative z-10"><i class="fas fa-arrow-right"></i><span>Sonraki Tura Geç</span></span>`;
+                    } else {
+                        completeBtn.innerHTML = `<span class="flex items-center gap-3 relative z-10"><i class="fas fa-check-circle"></i><span>Kaydı Tamamla</span></span>`;
+                    }
                     completeBtn.focus();
                 }
             }
@@ -520,6 +580,7 @@
                 code: e.code,
                 event_type: 'keyup',
                 timestamp: performance.now(),
+                is_modifier: true,
                 shift_pressed: shiftPressed,
                 position: currentIndex
             });
@@ -530,40 +591,96 @@
             // Doğruluk oranını hesapla
             const totalKeyPresses = correctKeyCount + incorrectKeyCount;
             const accuracyRate = totalKeyPresses > 0 ? (correctKeyCount / totalKeyPresses) * 100 : 0;
-            
+
+            const currentMetadata = {
+                correct_keys: correctKeyCount,
+                incorrect_keys: incorrectKeyCount,
+                accuracy_rate: accuracyRate,
+                target_text: targetText,
+                total_keystrokes: keystrokeData.length
+            };
+
+            if (currentRound === 1) {
+                // Round 1 Complete
+                firstRoundData = [...keystrokeData];
+                firstRoundMetadata = currentMetadata;
+
+                alert("Harika! Şimdi daha iyi bir analiz için lütfen metni bir kez daha yazınız.");
+
+                currentRound = 2;
+                resetTest(true); // true means prepare for round 2
+
+                // Update UI for Round 2
+                const indicator = document.getElementById('roundIndicator');
+                if (indicator) {
+                    indicator.innerHTML = `
+                        <div class="flex items-center gap-2 opacity-50">
+                            <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-emerald-400 text-xs font-bold ring-1 ring-emerald-500/30">
+                                <i class="fas fa-check"></i>
+                            </div>
+                            <span class="text-slate-400 text-sm font-semibold">Profil Analizi</span>
+                        </div>
+                        <div class="w-16 h-1 bg-slate-700 rounded-full overflow-hidden">
+                            <div class="h-full bg-purple-500 w-full rounded-full transition-all duration-1000"></div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center text-white text-xs font-bold shadow-lg shadow-purple-500/50 animate-pulse">2</div>
+                            <span class="text-purple-400 text-sm font-bold tracking-wide">Doğrulama</span>
+                        </div>
+                    `;
+                }
+
+                await fetchText();
+
+                return;
+            }
+
+            // Round 2 Complete - Send both data
             const payload = {
                 username: document.getElementById('username').value,
                 email: "",
-                keystrokes: keystrokeData,
-                metadata: {
-                    correct_keys: correctKeyCount,
-                    incorrect_keys: incorrectKeyCount,
-                    accuracy_rate: accuracyRate,
-                    target_text: targetText,
-                    total_keystrokes: keystrokeData.length
-                }
+                keystrokes: firstRoundData,
+                keystrokes_2: keystrokeData,
+                metadata: firstRoundMetadata,
+                metadata_2: currentMetadata
             };
+
+            completeBtn.disabled = true;
+            completeBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Kaydediliyor...';
 
             const res = await fetch('/api/register', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
 
             const result = await res.json();
-            if(result.status === 'success') {
+            if (result.status === 'success') {
                 completeBtn.innerHTML = `<span class="flex items-center gap-2 relative z-10">
                     <i class="fas fa-check-circle"></i>
                     <span>Başarılı!</span>
                 </span>`;
-                
-                window.location.href = '/';
+
+                // Show success modal with combined stats
+                showSuccessModal(
+                    (firstRoundMetadata.accuracy_rate + currentMetadata.accuracy_rate) / 2,
+                    ((firstRoundMetadata.wpm || 0) + (currentMetadata.wpm || 0)) / 2, // approximation
+                    "Tamamlandı",
+                    firstRoundData.length + keystrokeData.length,
+                    result.files_saved ? "2 Oturum" : "Hata"
+                );
+
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 3000);
             } else {
                 showErrorModal(result.detail || "Kayıt başarısız");
+                completeBtn.disabled = false;
+                completeBtn.innerHTML = 'Tekrar Dene';
             }
         }
 
-        function resetTest() {
+        function resetTest(isNextRound = false) {
             currentIndex = 0;
             keystrokeData = [];
             shiftPressed = false;
@@ -574,24 +691,37 @@
             testStartTime = null;
             stopTimer();
             timeDisplay.textContent = '0s';
-            renderText();
+            if (!isNextRound) {
+                renderText();
+            }
             hiddenInput.value = '';
             hiddenInput.focus();
             completeBtn.disabled = true;
             completeBtn.classList.add('opacity-50', 'cursor-not-allowed');
             completeBtn.classList.remove('scale-105', 'shadow-emerald-500/50');
+            if (currentRound === 1) {
+                completeBtn.innerHTML = `<span class="flex items-center gap-3 relative z-10">
+                            <span>Sonraki Adım</span>
+                            <i class="fas fa-arrow-right"></i>
+                        </span>`;
+            } else {
+                completeBtn.innerHTML = `<span class="flex items-center gap-3 relative z-10">
+                            <i class="fas fa-check-circle"></i>
+                            <span>Kaydı Tamamla</span>
+                        </span>`;
+            }
         }
-        
-        document.addEventListener('click', function(e) {
-             if(step2.classList.contains('hidden') === false && e.target.id !== 'completeBtn') {
-                 hiddenInput.focus();
-             }
+
+        document.addEventListener('click', function (e) {
+            if (step2.classList.contains('hidden') === false && e.target.id !== 'completeBtn') {
+                hiddenInput.focus();
+            }
         });
-        
+
         function createParticles() {
             const container = document.getElementById('particles-container');
             const particleCount = 20;
-            
+
             for (let i = 0; i < particleCount; i++) {
                 setTimeout(() => {
                     const particle = document.createElement('div');
@@ -599,7 +729,7 @@
                     particle.style.left = Math.random() * 100 + '%';
                     particle.style.animationDelay = Math.random() * 3 + 's';
                     particle.style.animationDuration = (Math.random() * 2 + 2) + 's';
-                    
+
                     const colors = [
                         'rgba(59, 130, 246, 0.6)',
                         'rgba(168, 85, 247, 0.6)',
@@ -607,46 +737,46 @@
                         'rgba(16, 185, 129, 0.6)'
                     ];
                     particle.style.background = colors[Math.floor(Math.random() * colors.length)];
-                    
+
                     container.appendChild(particle);
-                    
+
                     setTimeout(() => {
                         particle.remove();
                     }, 3000);
                 }, i * 150);
             }
         }
-        
+
         setInterval(createParticles, 3000);
         createParticles();
-        
+
         function showSuccessModal(accuracy, wpm, time, keys, features) {
             document.getElementById('modalAccuracy').textContent = accuracy.toFixed(1) + '%';
             document.getElementById('modalWPM').textContent = wpm + ' WPM';
             document.getElementById('modalTime').textContent = time;
             document.getElementById('modalKeys').textContent = keys;
             document.getElementById('modalFeatures').textContent = features;
-            
+
             const modal = document.getElementById('successModal');
             modal.classList.remove('hidden');
-            
+
             createConfetti();
         }
-        
+
         function closeModal() {
             const modal = document.getElementById('successModal');
             modal.classList.add('hidden');
             location.reload();
         }
-        
+
         function showErrorModal(message) {
             alert("❌ Hata: " + message);
         }
-        
+
         function createConfetti() {
             const colors = ['#fbbf24', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899', '#10b981'];
             const modalContent = document.querySelector('.modal-content');
-            
+
             for (let i = 0; i < 50; i++) {
                 setTimeout(() => {
                     const confetti = document.createElement('div');
@@ -655,15 +785,15 @@
                     confetti.style.background = colors[Math.floor(Math.random() * colors.length)];
                     confetti.style.animationDelay = Math.random() * 0.5 + 's';
                     confetti.style.animationDuration = (Math.random() * 2 + 2) + 's';
-                    
+
                     modalContent.appendChild(confetti);
-                    
+
                     setTimeout(() => confetti.remove(), 3000);
                 }, i * 30);
             }
         }
-        
-        document.addEventListener('keydown', function(e) {
+
+        document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape') {
                 const modal = document.getElementById('successModal');
                 if (!modal.classList.contains('hidden')) {
@@ -673,4 +803,5 @@
         });
     </script>
 </body>
+
 </html>
