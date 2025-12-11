@@ -6,12 +6,13 @@ from pathlib import Path
 
 import google.generativeai as genai
 import numpy as np
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from app.models import LoginRequest, RegisterRequest
+from app.training import train_model
 from app.services import (
     DATA_DIR,
     extract_keystroke_features,
@@ -169,15 +170,28 @@ async def login_user(data: LoginRequest):
         predictions = loaded_model.predict(sequence_data, verbose=0)
         logging.info("Model prediction shape: %s", predictions.shape)
 
+        # Get user specific index
+        from app.services import get_user_label_index
+        target_idx = get_user_label_index(data.username)
+        
         window_confidences = []
+        
+        if target_idx is None:
+            # User Not in Learning Map yet (maybe new registration before training completed?)
+            logging.warning("User %s not in label map (Training pending?). Fallback to Legacy.", data.username)
+            return await login_user_legacy(data)
+
         if len(predictions.shape) == 1:
-            window_confidences = predictions.flatten()
-        elif predictions.shape[1] == 1:
-            window_confidences = predictions.flatten()
-        elif predictions.shape[1] == 2:
-            window_confidences = predictions[:, 1]
+             # Should not happen with batch predict usually, but handle just in case
+             window_confidences = [predictions[target_idx]]
+        elif predictions.shape[1] == 1: 
+             # Binary Classification (0=Other, 1=User) - Assuming 1 is target if map says so?
+             # Complex if map has multiple binary models. Assuming Multi-Class Softmax here.
+             window_confidences = predictions.flatten()
         else:
-            window_confidences = np.max(predictions, axis=1)
+             # Multi-class Softmax: Take probability of the SPECIFIC user's class
+             # predictions shape: (windows, num_classes)
+             window_confidences = predictions[:, target_idx]
 
         raw_output = float(np.mean(window_confidences))
         min_conf = float(np.min(window_confidences))
@@ -262,7 +276,7 @@ async def logout(request: Request):
 
 
 @router.post("/api/register")
-async def register_user(data: RegisterRequest):
+async def register_user(data: RegisterRequest, background_tasks: BackgroundTasks):
     try:
         DATA_DIR.mkdir(exist_ok=True)
         user_dir = DATA_DIR / data.username
@@ -329,6 +343,10 @@ async def register_user(data: RegisterRequest):
             count_msg += f" + {len(data.keystrokes_2)}"
 
         logging.info("%s için veri kaydedildi: %s tuş vuruşu", data.username, count_msg)
+        
+        # Trigger training in background
+        background_tasks.add_task(train_model)
+        logging.info("Arka planda model eğitimi tetiklendi.")
 
         return {
             "status": "success",

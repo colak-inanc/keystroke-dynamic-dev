@@ -15,27 +15,61 @@ from app.models import KeystrokeData, LoginRequest
 APP_DIR = Path(__file__).resolve().parent
 WEB_APP_DIR = APP_DIR.parent
 PROJECT_ROOT = WEB_APP_DIR.parent
-MODEL_PATH = PROJECT_ROOT / "model" / "keystroke_lstm_model.h5"
+MODEL_PATH = PROJECT_ROOT / "model" / "keystroke_lstm_model.keras"
 DATA_DIR = WEB_APP_DIR / "keystroke_data"
-
-_model = None
-
+LABEL_MAP_PATH = PROJECT_ROOT / "model" / "label_map.json"
+_model_timestamp = 0.0
 
 def load_model():
-    global _model
+    global _model, _label_map, _model_timestamp
+    
+    # Check if model file has changed
+    model_changed = False
+    if MODEL_PATH.exists():
+        current_mtime = MODEL_PATH.stat().st_mtime
+        if current_mtime > _model_timestamp:
+            model_changed = True
+            logging.info("Model dosyası değişti, yeniden yükleniyor... (Eski: %s, Yeni: %s)", _model_timestamp, current_mtime)
+
+    # Force reload if changed
+    if model_changed:
+        _model = None
+        _label_map = None
+
+    # Load Label Map
+    if _label_map is None and LABEL_MAP_PATH.exists():
+        try:
+            with open(LABEL_MAP_PATH, "r", encoding="utf-8") as f:
+                _label_map = json.load(f)
+            logging.info("Label map yüklendi: %d sınıf", len(_label_map))
+        except Exception as e:
+            logging.error("Label map yükleme hatası: %s", e)
+
     if _model is None and MODEL_PATH.exists():
         try:
             _model = tf.keras.models.load_model(str(MODEL_PATH))
-            logging.info("Model yüklendi: %s", MODEL_PATH)
-            try:
-                _model.summary(print_fn=lambda x: logging.info("Model: %s", x))
-                logging.info("Model input shape: %s", _model.input_shape)
-                logging.info("Model output shape: %s", _model.output_shape)
-            except Exception: 
-                pass
+            _model_timestamp = MODEL_PATH.stat().st_mtime
+            logging.info("Model yüklendi: %s (Timestamp: %s)", MODEL_PATH, _model_timestamp)
         except Exception as exc:  
             logging.error("Model yükleme hatası: %s", exc)
     return _model
+
+
+def reload_model():
+    global _model, _label_map
+    _model = None
+    _label_map = None
+    load_model()
+
+
+def get_user_label_index(username: str) -> int | None:
+    """Returns the model output index for the given username."""
+    if _label_map is None:
+        load_model()
+    
+    if _label_map:
+        return _label_map.get(username)
+    return None
 
 
 # Feature Engineering Constants
@@ -208,7 +242,7 @@ def prepare_sequence_for_model(keystrokes: List[KeystrokeData], features: dict) 
             # Feature 5: Down-Down Latency
             if previous_keydown_time and keydown_time:
                 dd_lat = keydown_time - previous_keydown_time
-                dd_lat = min(dd_lat, MAX_LATENCY) # Clamp
+                dd_lat = max(0.0, min(dd_lat, MAX_LATENCY)) # Clamp
                 time_vector.append(np.log1p(dd_lat) / TIME_SCALE)
             else:
                 time_vector.append(0.0)
