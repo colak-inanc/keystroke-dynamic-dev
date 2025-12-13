@@ -641,9 +641,8 @@
 
             // Auto redirect after 3 seconds for better UX
             setTimeout(() => {
-                if (modal.classList.contains('show')) {
-                    closeSuccessModal();
-                }
+                console.log("Redirecting to dashboard...");
+                window.location.href = "/dashboard";
             }, 3000);
         }
 

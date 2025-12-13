@@ -58,8 +58,11 @@ def verify_session_token(token: str) -> dict | None:
 def get_current_user(request: Request) -> str | None:
     token = request.cookies.get(SESSION_COOKIE_NAME)
     if not token:
+        # logging.warning(f"No session cookie found. Header Cookie: {request.headers.get('cookie')}")
         return None
     session_data = verify_session_token(token)
+    if not session_data:
+        logging.warning("Session token verification failed")
     return session_data.get("username") if session_data else None
 
 
@@ -277,7 +280,8 @@ async def login_user(data: LoginRequest):
                 max_age=SESSION_MAX_AGE,
                 httponly=True,
                 samesite="lax",
-                secure=os.getenv("IS_PRODUCTION", "false").lower() == "true"
+                # FORCE SECURE FALSE for HTTP IP access (User reported 95.x.x.x IP usage without SSL)
+                secure=False 
             )
             return response
         else:
