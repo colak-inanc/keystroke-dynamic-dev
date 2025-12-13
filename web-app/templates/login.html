@@ -253,6 +253,10 @@
         let username = "";
         let accumulatedTargetText = "";
 
+        // Multi-Step Storage
+        let firstRoundData = [];
+        let firstRoundMetadata = null;
+
         // Multi-Step State
         let currentStep = 1;
         const totalSteps = 2;
@@ -387,8 +391,25 @@
             verifyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Hazırlanıyor...';
             verifyBtn.disabled = true;
 
-            // Accumulate validation text
-            accumulatedTargetText += targetText;
+            // 1. Save Current Step Data
+            firstRoundData = [...keystrokeData];
+            const totalKeyPresses = correctKeyCount + incorrectKeyCount;
+            const accuracyRate = totalKeyPresses > 0 ? (correctKeyCount / totalKeyPresses) * 100 : 0;
+
+            firstRoundMetadata = {
+                correct_keys: correctKeyCount,
+                incorrect_keys: incorrectKeyCount,
+                accuracy_rate: accuracyRate,
+                target_text: targetText,
+                total_keystrokes: keystrokeData.length
+            };
+
+            // 2. Reset For Next Step
+            keystrokeData = [];
+            correctKeyCount = 0;
+            incorrectKeyCount = 0;
+            currentIndex = 0;
+            hiddenInput.value = "";
 
             // Brief pause
             await new Promise(r => setTimeout(r, 500));
@@ -397,10 +418,6 @@
             currentStep++;
             updateStepUI();
 
-            // Reset for next text (BUT KEEP KEYSTROKE DATA)
-            currentIndex = 0;
-
-            hiddenInput.value = "";
             await fetchText();
 
             verifyBtn.classList.add('opacity-50', 'cursor-not-allowed');
@@ -539,22 +556,24 @@
             </span>`;
             verifyBtn.disabled = true;
 
+            // Step 2 Stats
             const totalKeyPresses = correctKeyCount + incorrectKeyCount;
             const accuracyRate = totalKeyPresses > 0 ? (correctKeyCount / totalKeyPresses) * 100 : 0;
 
-            // Final text accumulation
-            const finalTargetText = accumulatedTargetText + targetText;
+            const secondRoundMetadata = {
+                correct_keys: correctKeyCount,
+                incorrect_keys: incorrectKeyCount,
+                accuracy_rate: accuracyRate,
+                target_text: targetText, // Current step text
+                total_keystrokes: keystrokeData.length
+            };
 
             const payload = {
                 username: username,
-                keystrokes: keystrokeData, // Contains BOTH steps data
-                metadata: {
-                    correct_keys: correctKeyCount,
-                    incorrect_keys: incorrectKeyCount,
-                    accuracy_rate: accuracyRate,
-                    target_text: finalTargetText,
-                    total_keystrokes: keystrokeData.length
-                }
+                keystrokes: firstRoundData, // Step 1
+                metadata: firstRoundMetadata, // Step 1 Meta
+                keystrokes_2: keystrokeData, // Step 2
+                metadata_2: secondRoundMetadata // Step 2 Meta
             };
 
             try {
@@ -577,9 +596,16 @@
                     }, 500);
                 } else {
                     showErrorMessage(result.message || "Kimlik doğrulanamadı");
+                    verifyBtn.innerHTML = `<span class="flex items-center gap-3 relative z-10">
+                        <i class="fas fa-redo"></i>
+                        <span>Tekrar Dene</span>
+                    </span>`;
+                    verifyBtn.disabled = false;
+                    verifyBtn.classList.remove('opacity-50', 'cursor-not-allowed');
                 }
             } catch (err) {
                 showErrorMessage("Bağlantı hatası. Lütfen tekrar deneyin.");
+                verifyBtn.disabled = false;
             }
         }
 
@@ -645,6 +671,8 @@
 
             currentIndex = 0;
             keystrokeData = [];
+            firstRoundData = [];
+            firstRoundMetadata = null;
             correctKeyCount = 0;
             incorrectKeyCount = 0;
             shiftPressed = false;
@@ -660,6 +688,8 @@
         function cancelAuth() {
             currentIndex = 0;
             keystrokeData = [];
+            firstRoundData = [];
+            firstRoundMetadata = null;
             correctKeyCount = 0;
             incorrectKeyCount = 0;
             shiftPressed = false;

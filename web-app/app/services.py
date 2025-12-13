@@ -420,15 +420,20 @@ def calculate_similarity(user_features, stored_data):
     return float(np.mean(similarities))
 
 
-def save_login_session(username: str, keystrokes: List[KeystrokeData], features: dict, confidence: float, success: bool):
+def save_login_session(username: str, keystrokes: List[KeystrokeData], features: dict, confidence: float, success: bool, step_suffix: str = ""):
     try:
         DATA_DIR.mkdir(exist_ok=True)
         user_dir = DATA_DIR / username
         user_dir.mkdir(exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        filename = f"login_{timestamp}"
+        if step_suffix:
+            filename += f"_{step_suffix}"
+        filename += ".json"
 
-        raw_data_file = user_dir / f"login_{timestamp}.json"
+        raw_data_file = user_dir / filename
         letter_errors = summarize_letter_errors(features)
 
         raw_data = {

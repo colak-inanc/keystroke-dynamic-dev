@@ -143,118 +143,131 @@ async def login_user(data: LoginRequest):
                 "message": f"Kullanıcı '{data.username}' bulunamadı. Lütfen önce kayıt olun."
             }
 
-        from app.services import check_physiological_validity
-        physio_check = check_physiological_validity(data.keystrokes)
-        if not physio_check["valid"]:
-             logging.warning("Physiological check failed for %s: %s", data.username, physio_check["reason"])
+        loaded_model = load_model()
+        if loaded_model is None:
+             logging.warning("Model yüklenemedi, işlem iptal ediliyor (Legacy support removed for segmentation update).")
              return {
                  "status": "error",
-                 "message": f"Doğrulama reddedildi: {physio_check['reason']}"
+                 "message": "Kimlik doğrulama servisi şu anda kullanılamıyor (Model hatası)."
+             } 
+
+        # Prepare steps
+        steps = [
+            (data.keystrokes, data.metadata, 1),
+            (data.keystrokes_2, data.metadata_2, 2),
+            (data.keystrokes_3, data.metadata_3, 3)
+        ]
+
+        valid_segments = []
+        confidences = []
+        
+        # Validation & Prediction Loop
+        from app.services import (
+            check_physiological_validity, 
+            reconstruct_text_from_keystrokes, 
+            calculate_text_similarity,
+            get_user_label_index
+        )
+        
+        target_idx = get_user_label_index(data.username)
+        if target_idx is None:
+             return {
+                 "status": "error",
+                 "message": "Kullanıcı modelde tanımlı değil (Eğitim gerekli)."
              }
 
-        target_text = data.metadata.target_text if data.metadata else ""
-        if target_text:
-            from app.services import reconstruct_text_from_keystrokes, calculate_text_similarity
+        for ks, meta, step_num in steps:
+            if not ks or len(ks) < 5: continue
+
+            # 1. Physio Check
+            physio_check = check_physiological_validity(ks)
+            if not physio_check["valid"]:
+                 logging.warning(f"Step {step_num} Physio Check Failed: {physio_check['reason']}")
+                 continue # Skip bad segments, don't fail whole request yet? Or strict fail? 
+                 # Strict fail might be annoying if one step is just slightly off. Let's strict fail for now to ensure quality.
+                 # return {"status": "error", "message": f"Adım {step_num} geçersiz: {physio_check['reason']}"}
+
+            # 2. Text Validation
+            if meta and meta.target_text:
+                typed_text = reconstruct_text_from_keystrokes(ks)
+                similarity = calculate_text_similarity(typed_text.lower(), meta.target_text.lower())
+                if similarity < 0.60:
+                     logging.warning(f"Step {step_num} Text Mismatch: {similarity}")
+                     return {
+                         "status": "error",
+                         "message": f"Adım {step_num} metni eşleşmiyor (%{int(similarity*100)}). Lütfen dikkatli yazın."
+                     }
             
-            typed_text = reconstruct_text_from_keystrokes(data.keystrokes)
-            similarity = calculate_text_similarity(typed_text.lower(), target_text.lower())
+            # 3. Feature Extraction
+            features = extract_keystroke_features(ks)
+            sequence_data = prepare_sequence_for_model(ks, features)
             
-            logging.info("Text Validation -> Target: '%s'...", target_text[:20])
-            logging.info("Text Validation -> Typed:  '%s'...", typed_text[:20])
-            logging.info("Text Validation -> Similarity: %.2f%%", similarity * 100)
+            if sequence_data is None: continue
+
+            # 4. Predict
+            # Ensure sequence_data matches model input
+            is_valid_input = False
+            if isinstance(sequence_data, list) and len(sequence_data) == 2: is_valid_input = True
+            elif isinstance(sequence_data, np.ndarray): is_valid_input = True
             
-            # Threshold: 60% (Allow some typos, but not completely wrong text)
-            if similarity < 0.60:
-                logging.warning("Text similarity too low for %s: %.2f", data.username, similarity)
-                return {
-                    "status": "error",
-                    "message": f"Girdiğiniz metin, doğrulama metni ile eşleşmiyor (Benzerlik: %{int(similarity*100)}). Lütfen ekrandaki metni doğru yazın.",
-                    "letter_error_summary": summarize_letter_errors(extract_keystroke_features(data.keystrokes))
-                }
-        else:
-            logging.warning("No target text provided in metadata for %s. Skipping text validation.", data.username)
+            if not is_valid_input: continue
 
+            predictions = loaded_model.predict(sequence_data, verbose=0)
+            
+            # Extract confidence for specific user
+            step_confidence = 0.0
+            if len(predictions.shape) == 1:
+                 step_confidence = float(predictions[target_idx])
+            elif predictions.shape[1] == 1:
+                 step_confidence = float(predictions.flatten()[0]) # Binary assumption
+            else:
+                 # Standard Softmax
+                 step_confidence = float(np.mean(predictions[:, target_idx]))
+            
+            confidences.append(step_confidence)
+            valid_segments.append({
+                "step": step_num,
+                "dataset": ks,
+                "features": features,
+                "confidence": step_confidence
+            })
 
-        loaded_model = load_model()
+        if not valid_segments:
+            return {
+                "status": "error",
+                "message": "Geçerli veri segmenti bulunamadı veya tüm doğrulama kontrolleri başarısız oldu."
+            }
 
-        if loaded_model is None:
-            logging.warning("Model yüklenemedi, legacy yöntem kullanılıyor")
-            return await login_user_legacy(data)
-
-        features = extract_keystroke_features(data.keystrokes)
-        letter_summary = summarize_letter_errors(features)
-        sequence_data = prepare_sequence_for_model(data.keystrokes, features)
-
-        if sequence_data is None:
-            logging.warning("Sequence data is None")
-            return await login_user_legacy(data)
-
-        is_valid_input = False
-        if isinstance(sequence_data, list):
-             if len(sequence_data) == 2 and len(sequence_data[0].shape) == 3:
-                 is_valid_input = True
-                 logging.info("Multi-Input detected: Time shape %s, Key shape %s", sequence_data[0].shape, sequence_data[1].shape)
-        elif isinstance(sequence_data, np.ndarray):
-             if len(sequence_data.shape) == 3:
-                 is_valid_input = True
-
-        if not is_valid_input:
-            logging.warning(
-                "Sequence formatı uygun değil: %s",
-                type(sequence_data)
-            )
-            return await login_user_legacy(data)
-
-        predictions = loaded_model.predict(sequence_data, verbose=0)
-        logging.info("Model prediction shape: %s", predictions.shape)
-
-        # Get user specific index
-        from app.services import get_user_label_index
-        target_idx = get_user_label_index(data.username)
-        
-        window_confidences = []
-        
-        if target_idx is None:
-            # User Not in Learning Map yet (maybe new registration before training completed?)
-            logging.warning("User %s not in label map (Training pending?). Fallback to Legacy.", data.username)
-            return await login_user_legacy(data)
-
-        if len(predictions.shape) == 1:
-             # Should not happen with batch predict usually, but handle just in case
-             window_confidences = [predictions[target_idx]]
-        elif predictions.shape[1] == 1: 
-             # Binary Classification (0=Other, 1=User) - Assuming 1 is target if map says so?
-             # Complex if map has multiple binary models. Assuming Multi-Class Softmax here.
-             window_confidences = predictions.flatten()
-        else:
-             # Multi-class Softmax: Take probability of the SPECIFIC user's class
-             # predictions shape: (windows, num_classes)
-             window_confidences = predictions[:, target_idx]
-
-        raw_output = float(np.mean(window_confidences))
-        min_conf = float(np.min(window_confidences))
-        max_conf = float(np.max(window_confidences))
-        
-        logging.info("Window confidences: %s", window_confidences)
-        logging.info("Voting Result -> Mean: %.4f, Min: %.4f, Max: %.4f", raw_output, min_conf, max_conf)
-
-        confidence = max(0.0, min(1.0, raw_output))
-        logging.info("Model raw output: %.8f, Confidence: %.8f (%.4f%%)", raw_output, confidence, confidence * 100)
+        # Final Decision
+        final_confidence = float(np.mean(confidences))
         THRESHOLD = 0.50
+        is_success = final_confidence >= THRESHOLD
 
-        if confidence >= THRESHOLD:
-            logging.info("Başarılı giriş (Model): %s (güven: %.2f)", data.username, confidence)
+        logging.info(f"Login Decision for {data.username}: {is_success} (Avg Conf: {final_confidence:.4f} from {len(confidences)} segments)")
 
+        # Save Sessions (All segments saved with the Final Success Status)
+        for seg in valid_segments:
             try:
-                save_login_session(data.username, data.keystrokes, features, confidence, True)
-            except Exception as exc:  
-                logging.warning("Giriş oturumu kaydedilemedi: %s", exc)
+                save_login_session(
+                    username=data.username, 
+                    keystrokes=seg["dataset"], 
+                    features=seg["features"], 
+                    confidence=seg["confidence"], 
+                    success=is_success,
+                    step_suffix=f"s{seg['step']}"
+                )
+            except Exception as e:
+                logging.error(f"Failed to save session step {seg['step']}: {e}")
 
+        # Response
+        letter_summary = summarize_letter_errors(valid_segments[0]["features"]) # Summary from first valid segment
+        
+        if is_success:
             session_token = create_session_token(data.username)
             response = JSONResponse(content={
                 "status": "success",
                 "username": data.username,
-                "confidence": confidence,
+                "confidence": final_confidence,
                 "message": "Kimlik doğrulandı",
                 "letter_error_summary": letter_summary
             })
@@ -267,17 +280,12 @@ async def login_user(data: LoginRequest):
                 secure=os.getenv("IS_PRODUCTION", "false").lower() == "true"
             )
             return response
-
-        logging.warning("Başarısız giriş denemesi (Model): %s (güven: %.2f)", data.username, confidence)
-        try:
-            save_login_session(data.username, data.keystrokes, features, confidence, False)
-        except Exception as exc: 
-            logging.warning("Giriş oturumu kaydedilemedi: %s", exc)
-        return {
-            "status": "error",
-            "message": f"Klavye dinamikleri eşleşmiyor (güven: {confidence*100:.1f}%). Bu hesap size ait olmayabilir!",
-            "letter_error_summary": letter_summary
-        }
+        else:
+            return {
+                "status": "error",
+                "message": f"Klavye dinamikleri eşleşmiyor (Güven: %{int(final_confidence*100)}).",
+                "letter_error_summary": letter_summary
+            }
 
     except Exception as exc: 
         import traceback

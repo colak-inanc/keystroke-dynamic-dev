@@ -32,5 +32,9 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     keystrokes: List[KeystrokeData]
+    keystrokes_2: Optional[List[KeystrokeData]] = None
+    keystrokes_3: Optional[List[KeystrokeData]] = None
     metadata: Optional[SessionMetadata] = None
+    metadata_2: Optional[SessionMetadata] = None
+    metadata_3: Optional[SessionMetadata] = None
 
