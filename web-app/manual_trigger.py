@@ -1,41 +1,52 @@
-import logging
+
+import requests
 import sys
-import os
+import logging
+import time
 
-# Mevcut dizini path'e ekle ki app modülü bulunsun
-sys.path.append(os.getcwd())
+# Configure logging to mimic the app
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Logging ayarları
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-
-try:
-    from app.training import train_model
-except ImportError as e:
-    print(f"Hata: 'app.training' modülü yüklenemedi. Lütfen scripti 'web-app' klasörü içinden çalıştırdığınızdan emin olun.")
-    print(f"Detay: {e}")
-    sys.exit(1)
-
-if __name__ == "__main__":
-    print("\nManuel Model Eğitimi Tetikleniyor...")
-    print("=========================================")
-    print("Lütfen bekleyin, veriler işleniyor ve model eğitiliyor...")
+def run_local_training():
+    """
+    Runs the training pipeline directly in this process.
+    Logs will appear in THIS terminal.
+    """
+    print("\n🚀 Starting DIRECT training (Local Mode)...")
+    print("---------------------------------------------")
+    print("ℹ️  Logs will appear here. Please wait...")
     
     try:
-        # Eğitimi başlat
+        from app.training import train_model
         train_model()
-        
-        print("\nİŞLEM BAŞARILI!")
-        print("=========================================")
-        print("Model başarıyla eğitildi ve kaydedildi.")
-        print("Web sunucusu (servis) dosya değişimini algılayıp yeni modeli otomatik yükleyecektir.")
-        
+        print("\n✅ Direct training completed successfully.")
+    except ImportError:
+        print("❌ Error: Could not import app.training. Make sure you run this from the 'web-app' directory.")
     except Exception as e:
-        print("\nBİR HATA OLUŞTU!")
-        print("=========================================")
-        logging.error("Eğitim sırasında beklenmeyen bir hata:", exc_info=True)
+        print(f"❌ Critical Error during direct training: {e}")
+
+def trigger_via_api():
+    """
+    Triggers training on the running server (Logs appear in server terminal).
+    """
+    url = "http://localhost:8000/api/debug/train"
+    print(f"Attempting to trigger training via API at {url}...")
+    try:
+        response = requests.post(url, timeout=2)
+        if response.status_code == 200:
+            print("✅ Success: Training started via API (Background Task).")
+            print("Response:", response.json())
+        else:
+            print(f"⚠️ API returned error: {response.status_code}")
+    except Exception as e:
+        print(f"⚠️ API Unreachable: {e}")
+
+if __name__ == "__main__":
+    # Default to Local Training so user sees the logs
+    # If you purely want to test the API endpoint, uncomment the line below:
+    # trigger_via_api()
+    
+    run_local_training()
+    
+    # Preventing immediate exit so user can read logs if opened via click
+    # time.sleep(2)

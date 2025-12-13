@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from sklearn.metrics import classification_report, confusion_matrix, roc_curve, auc
 from sklearn.preprocessing import label_binarize
-from app.services import DATA_DIR, MODEL_PATH
+from app.services import DATA_DIR, MODEL_PATH, get_stable_key_id
 from app.training import process_file_for_training
 from app.imposter_generator import generate_imposter_data
 import logging
@@ -15,15 +15,21 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def test_model_comprehensive():
+    print("DEBUG: Starting test_model_comprehensive...")
+    print(f"DEBUG: Model Path: {MODEL_PATH}")
+    
     if not MODEL_PATH.exists():
         logging.error(f"Model file not found at {MODEL_PATH}")
+        print(f"ERROR: Model file not found at {MODEL_PATH}")
         return
 
     try:
         model = tf.keras.models.load_model(str(MODEL_PATH))
         logging.info(f"Model loaded successfully from {MODEL_PATH}")
+        print("DEBUG: Model loaded successfully.")
     except Exception as e:
         logging.error(f"Failed to load model: {e}")
+        print(f"ERROR: Failed to load model: {e}")
         return
 
     label_map_path = MODEL_PATH.parent / "label_map.json"
@@ -70,10 +76,11 @@ def test_model_comprehensive():
     
     real_sample_count = len(X_time_list)
 
-    # 2. Generate Synthetic Imposters for Test (1:1 Ratio)
+    # 2. Generate Synthetic Imposters for Test (1:0.5 Ratio)
     if "_IMPOSTER_" in label_map:
         imposter_label = label_map["_IMPOSTER_"]
-        n_imposter_samples = real_sample_count
+        # Matches training logic to reduce False Rejection bias
+        n_imposter_samples = int(real_sample_count * 0.5)
         
         # Ensure at least some imposters if real data is tiny
         if n_imposter_samples < 50: 
@@ -182,7 +189,12 @@ def test_model_comprehensive():
              print(f"Class {idx_to_label.get(i, f'Class {i}'):<15} AUC: N/A (No samples)")
 
     plt.figure()
-    colors = plt.cm.get_cmap('tab10', n_classes)
+    # Fixed deprecation warning: Use matplotlib.colormaps
+    import matplotlib
+    try:
+        colors = matplotlib.colormaps['tab10']
+    except:
+        colors = plt.cm.get_cmap('tab10')
     
     for i in range(n_classes):
         if i in fpr:
@@ -200,6 +212,89 @@ def test_model_comprehensive():
     save_path = MODEL_PATH.parent / "roc_curve.png"
     plt.savefig(save_path)
     print(f"\nROC Curve saved to: {save_path}")
+
+    # -------------------------------------------------------------------------
+    # 2.5 REALISTIC ACCURACY (FROM K-FOLD VALIDATION)
+    # -------------------------------------------------------------------------
+    metrics_path = MODEL_PATH.parent / "validation_metrics.json"
+    if metrics_path.exists():
+        print("\n" + "="*60)
+        print("REALISTIC ACCURACY ESTIMATE (5-FOLD CROSS VALIDATION)")
+        print("="*60)
+        try:
+            with open(metrics_path, "r") as f:
+                metrics = json.load(f)
+            
+            acc = metrics.get("k_fold_accuracy", 0.0)
+            n_folds = metrics.get("n_splits", 5)
+            print(f"Mean Validation Accuracy: {acc:.2%} (Averaged over {n_folds} folds)")
+            print("Note: This score is calculated on 'unseen' data during training.")
+            print("      It represents the true expected performance.")
+        except Exception as e:
+            print(f"Could not read validation metrics: {e}")
+
+
+    # -------------------------------------------------------------------------
+    # 3. SPECIFIC TEST: FAST RANDOM TYPING (The specific failure case)
+    # -------------------------------------------------------------------------
+    print("\n" + "="*60)
+    print("SPECIFIC TEST: FAST/ERRATIC RANDOM TYPING REJECTION")
+    print("="*60)
+    
+    # Generate manually "Fast" and "Erratic" samples that might have confused the old model
+    n_stress_test = 20
+    X_stress_time = []
+    X_stress_key = []
+    
+    vocab_pool = list("abcdefghijklmnopqrstuvwxyz 1234567890")
+    
+    # Generate FAST typist behavior (Low Dwell/Flight)
+    for _ in range(n_stress_test):
+        seq_time = []
+        seq_key = []
+        for _ in range(50):
+            # Very fast: 30-50ms dwell, 10-30ms flight
+            dwell = np.random.normal(40, 5)
+            flight = np.random.normal(20, 5)
+            delay = dwell + flight
+            
+            norm_dwell = np.log1p(max(10, dwell)) / 7.0
+            norm_flight = np.log1p(max(5, flight)) / 7.0
+            norm_delay = np.log1p(max(10, delay)) / 7.0
+            
+            time_vec = [norm_dwell, norm_flight, norm_delay, 0.2, norm_delay] # Low pressure
+            
+            key_id = get_stable_key_id(np.random.choice(vocab_pool))
+            seq_time.append(time_vec)
+            seq_key.append(key_id)
+        X_stress_time.append(seq_time)
+        X_stress_key.append(seq_key)
+        
+    X_stress_time = np.array(X_stress_time, dtype=np.float32)
+    X_stress_key = np.array(X_stress_key, dtype=np.int32)
+    
+    stress_probs = model.predict([X_stress_time, X_stress_key], verbose=0)
+    
+    if "_IMPOSTER_" in label_map:
+        imposter_idx = label_map["_IMPOSTER_"]
+        stress_preds = np.argmax(stress_probs, axis=1)
+        
+        n_caught = np.sum(stress_preds == imposter_idx)
+        print(f"Fast/Random Samples Tested: {n_stress_test}")
+        print(f"Correctly Classified as IMPOSTER: {n_caught}/{n_stress_test}")
+        
+        # Check confidences for non-imposters (false positives)
+        fp_indices = np.where(stress_preds != imposter_idx)[0]
+        if len(fp_indices) > 0:
+            fp_confidences = np.max(stress_probs[fp_indices], axis=1)
+            print(f"False Positives Avg Confidence: {np.mean(fp_confidences):.4f}")
+            print("WARNING: Some fast random inputs are still leaking through!")
+        else:
+            print("SUCCESS: All fast random inputs rejected.")
+            
+    else:
+        print("Skipping stress test explanation (No _IMPOSTER_ class).")
+
 
 if __name__ == "__main__":
     test_model_comprehensive()

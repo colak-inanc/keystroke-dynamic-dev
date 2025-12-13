@@ -5,8 +5,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Keystroke Dynamics - Biometric Authentication</title>
-    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script>
         const originalWarn = console.warn;
         console.warn = function (...args) {
@@ -16,12 +14,17 @@
             originalWarn.apply(console, args);
         };
 
-        tailwind.config = {
+        // Wait for tailwind to load if using CDN
+        window.tailwind = window.tailwind || {};
+        window.tailwind.config = {
             theme: {
                 extend: {}
             }
         }
     </script>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@700;900&display=swap"
         rel="stylesheet">
@@ -172,11 +175,7 @@
 
             <div id="step2" class="hidden w-full">
                 <div class="text-center mb-6">
-                    <h3
-                        class="text-3xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-2 flex items-center justify-center gap-3">
-                        <i class="fas fa-brain"></i>
-                        Klavye Dinamikleri Analizi
-                    </h3>
+                    <!-- Title removed for cleaner UI -->
 
                     <div
                         class="w-full bg-slate-800/50 rounded-full h-3 mb-2 relative overflow-hidden border border-slate-700">
@@ -305,80 +304,48 @@
         const timeDisplay = document.getElementById('timeDisplay');
         const keystrokeDisplay = document.getElementById('keystrokeDisplay');
 
-        // --- Adım Geçişleri ---
-        async function goToStep2() {
-            const username = document.getElementById('username').value;
-            if (!username) return alert("Lütfen kullanıcı adı girin.");
+        let secondRoundData = null;
+        let secondRoundMetadata = null;
 
-            // Animasyonlu geçiş
-            step1.classList.add('opacity-0', 'translate-x-[-20px]');
-            setTimeout(async () => {
-                step1.classList.add('hidden');
-                step2.classList.remove('hidden');
+        // --- Missing Functions Implementation ---
 
-                // Add round indicator if not exists
-                if (!document.getElementById('roundIndicator')) {
-                    const header = step2.querySelector('.text-center');
-                    const indicator = document.createElement('div');
-                    indicator.id = 'roundIndicator';
-                    indicator.className = 'flex items-center justify-center gap-4 mb-6';
-                    indicator.innerHTML = `
-                        <div class="flex items-center gap-2">
-                            <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold shadow-lg shadow-blue-500/50 animate-pulse">1</div>
-                            <span class="text-blue-400 text-sm font-bold tracking-wide">Profil Analizi</span>
-                        </div>
-                        <div class="w-16 h-1 bg-slate-700 rounded-full overflow-hidden">
-                            <div class="h-full bg-blue-500/50 w-1/2 rounded-full"></div>
-                        </div>
-                        <div class="flex items-center gap-2 opacity-50">
-                            <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white text-xs font-bold ring-1 ring-slate-600">2</div>
-                            <span class="text-slate-400 text-sm font-semibold">Doğrulama</span>
-                        </div>
-                    `;
-                    header.insertBefore(indicator, header.children[1]); // Insert after title
-                }
-
-                // Metni Getir
-                await fetchText();
-
-                step2.classList.add('animate-fadeIn');
-            }, 300);
-        }
-
-        // --- Metin Getirme (Gemini API Simülasyonu) ---
         async function fetchText() {
-            textDisplay.innerHTML = '<span class="text-blue-400 animate-pulse">Size özel doğrulama metni oluşturuluyor...</span>';
-
+            textDisplay.innerHTML = '<span class="text-blue-400 animate-pulse"><i class="fas fa-spinner fa-spin mr-2"></i>Metin yükleniyor...</span>';
             try {
-                const res = await fetch(`/api/get-text?round=${currentRound}`);
-                const data = await res.json();
-                targetText = data.text;
-                renderText();
-                focusInput();
-            } catch (err) {
-                textDisplay.innerHTML = "Hata oluştu. Lütfen sayfayı yenileyin.";
+                const response = await fetch(`/api/get-text?round=${currentRound}`);
+                const data = await response.json();
+
+                if (data.text) {
+                    targetText = data.text;
+                    renderText();
+                    focusInput();
+                } else {
+                    textDisplay.innerHTML = '<span class="text-red-400">Metin alınamadı.</span>';
+                }
+            } catch (error) {
+                console.error("Metin alma hatası:", error);
+                textDisplay.innerHTML = '<span class="text-red-400">Bağlantı hatası.</span>';
             }
         }
 
-        // --- Metni Ekrana Basma ---
         function renderText() {
             textDisplay.innerHTML = '';
             targetText.split('').forEach(char => {
                 const span = document.createElement('span');
-                span.innerText = char;
+                span.textContent = char;
                 span.className = 'letter';
                 textDisplay.appendChild(span);
             });
             totalChars.textContent = targetText.length;
             updateActiveLetter();
-            updateStats();
+            updateStatsUI();
         }
 
         function updateActiveLetter() {
             const letters = document.querySelectorAll('.letter');
-            letters.forEach(l => l.classList.remove('active'));
+            letters.forEach(l => l.classList.remove('active', 'current'));
             if (currentIndex < letters.length) {
-                letters[currentIndex].classList.add('active');
+                letters[currentIndex].classList.add('active', 'current');
             }
         }
 
@@ -386,58 +353,12 @@
             hiddenInput.focus();
         }
 
-        function updateStats() {
-            const progress = targetText.length > 0 ? (currentIndex / targetText.length) * 100 : 0;
-            progressBar.style.width = progress + '%';
-            progressText.textContent = currentIndex;
-
-            const totalPresses = correctKeyCount + incorrectKeyCount;
-            const accuracy = totalPresses > 0 ? (correctKeyCount / totalPresses) * 100 : 100;
-            accuracyDisplay.textContent = accuracy.toFixed(1) + '%';
-
-            if (accuracy >= 95) {
-                accuracyDisplay.classList.add('text-green-400');
-                accuracyDisplay.classList.remove('text-yellow-400', 'text-red-400');
-            } else if (accuracy >= 80) {
-                accuracyDisplay.classList.add('text-yellow-400');
-                accuracyDisplay.classList.remove('text-green-400', 'text-red-400');
-            } else {
-                accuracyDisplay.classList.add('text-red-400');
-                accuracyDisplay.classList.remove('text-green-400', 'text-yellow-400');
-            }
-
-            const realKeystrokes = keystrokeData.filter(k =>
-                k.event_type === 'keydown' &&
-                !k.is_modifier &&
-                k.key !== 'Backspace'
-            ).length;
-            keystrokeDisplay.textContent = realKeystrokes;
-
-            if (testStartTime) {
-                const elapsedSeconds = (performance.now() - testStartTime) / 1000;
-                const words = currentIndex / 5;
-                const wpm = elapsedSeconds > 0 ? Math.round((words / elapsedSeconds) * 60) : 0;
-                wpmDisplay.textContent = wpm;
-
-                if (wpm >= 60) {
-                    wpmDisplay.classList.add('text-green-400');
-                    wpmDisplay.classList.remove('text-blue-400', 'text-yellow-400');
-                } else if (wpm >= 40) {
-                    wpmDisplay.classList.add('text-yellow-400');
-                    wpmDisplay.classList.remove('text-blue-400', 'text-green-400');
-                } else {
-                    wpmDisplay.classList.add('text-blue-400');
-                    wpmDisplay.classList.remove('text-yellow-400', 'text-green-400');
-                }
-            }
-        }
-
         function startTimer() {
             if (!testStartTime) {
                 testStartTime = performance.now();
                 timerInterval = setInterval(() => {
-                    const elapsed = Math.floor((performance.now() - testStartTime) / 1000);
-                    timeDisplay.textContent = elapsed + 's';
+                    const elapsedSec = Math.floor((performance.now() - testStartTime) / 1000);
+                    timeDisplay.textContent = elapsedSec + 's';
                 }, 1000);
             }
         }
@@ -449,33 +370,36 @@
             }
         }
 
-        // --- Tuş Dinamiklerini Yakalama ---
+        function updateStatsUI() {
+            const progress = targetText.length > 0 ? (currentIndex / targetText.length) * 100 : 0;
+            progressBar.style.width = `${progress}%`;
+            progressText.textContent = currentIndex;
+
+            if (keystrokeDisplay) keystrokeDisplay.textContent = keystrokeData.length;
+
+            const total = correctKeyCount + incorrectKeyCount;
+            const acc = total > 0 ? (correctKeyCount / total) * 100 : 100;
+            if (accuracyDisplay) accuracyDisplay.textContent = `${Math.round(acc)}%`;
+
+            if (testStartTime && wpmDisplay) {
+                const elapsedMin = (performance.now() - testStartTime) / 60000;
+                const wpm = elapsedMin > 0 ? Math.round((currentIndex / 5) / elapsedMin) : 0;
+                wpmDisplay.textContent = wpm;
+            }
+        }
+
+        // --- Event Listeners ---
+
         hiddenInput.addEventListener('keydown', (e) => {
-            // Modifier tuşları takip et
-            if (e.key === "Shift") {
-                shiftPressed = true;
-                keystrokeData.push({
-                    key: e.key,
-                    code: e.code,
-                    event_type: 'keydown',
-                    timestamp: performance.now(),
-                    is_modifier: true
-                });
-                return;
-            }
-            if (e.key === "Control") {
-                ctrlPressed = true;
-                return;
-            }
-            if (e.key === "Alt") {
-                altPressed = true;
-                return;
-            }
+            if (e.key === "Shift") { shiftPressed = true; }
+            if (e.key === "Control") { ctrlPressed = true; return; }
+            if (e.key === "Alt") { altPressed = true; return; }
+
+            startTimer();
 
             const letters = document.querySelectorAll('.letter');
             const expectedChar = currentIndex < targetText.length ? targetText[currentIndex] : null;
 
-            // Backspace Mantığı
             if (e.key === "Backspace") {
                 keystrokeData.push({
                     key: e.key,
@@ -484,27 +408,34 @@
                     timestamp: performance.now(),
                     is_backspace: true,
                     is_correct: false,
-                    shift_pressed: shiftPressed,
-                    position: currentIndex
+                    shift_pressed: shiftPressed
                 });
 
                 if (currentIndex > 0) {
                     currentIndex--;
                     letters[currentIndex].className = 'letter';
                     updateActiveLetter();
-                    updateStats();
+                    updateStatsUI();
                 }
                 return;
             }
 
-            startTimer();
 
-            // Normal tuş - doğruluk kontrolü yap
-            const isCorrect = e.key === expectedChar;
+            // --- Enhanced Key Capture ---
+            let charToCapture = e.key;
 
-            // Veri Kaydı - GELİŞMİŞ
+            // Normalize Space
+            if (e.key === "Space" || e.code === "Space") {
+                charToCapture = " ";
+            } else if (e.key.length > 1) {
+                // Ignore other special keys (Enter, Tab, F-keys, etc.)
+                return;
+            }
+
+            const isCorrect = charToCapture === expectedChar;
+
             keystrokeData.push({
-                key: e.key,
+                key: charToCapture,
                 code: e.code,
                 event_type: 'keydown',
                 timestamp: performance.now(),
@@ -513,140 +444,197 @@
                 shift_pressed: shiftPressed,
                 ctrl_pressed: ctrlPressed,
                 alt_pressed: altPressed,
-                expected_char: expectedChar,
-                position: currentIndex
+                expected_char: expectedChar
             });
 
-            // İstatistik güncelle
-            startTimer();
-
-            if (isCorrect) {
-                correctKeyCount++;
-            } else {
-                incorrectKeyCount++;
-            }
+            if (isCorrect) correctKeyCount++;
+            else incorrectKeyCount++;
 
             if (currentIndex < targetText.length) {
-                if (isCorrect) {
-                    letters[currentIndex].classList.add('correct');
-                } else {
-                    letters[currentIndex].classList.add('incorrect');
-                }
+                if (isCorrect) letters[currentIndex].classList.add('correct');
+                else letters[currentIndex].classList.add('incorrect');
 
                 currentIndex++;
                 updateActiveLetter();
-                updateStats();
+                updateStatsUI();
+            }
 
-                if (currentIndex === targetText.length) {
-                    stopTimer();
-                    completeBtn.disabled = false;
-                    completeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                    completeBtn.classList.add('scale-105', 'shadow-emerald-500/50');
-                    if (currentRound === 1) {
-                        completeBtn.innerHTML = `<span class="flex items-center gap-3 relative z-10"><i class="fas fa-arrow-right"></i><span>Sonraki Tura Geç</span></span>`;
-                    } else {
-                        completeBtn.innerHTML = `<span class="flex items-center gap-3 relative z-10"><i class="fas fa-check-circle"></i><span>Kaydı Tamamla</span></span>`;
-                    }
-                    completeBtn.focus();
-                }
+            if (currentIndex === targetText.length) {
+                stopTimer();
+                completeBtn.disabled = false;
+                completeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                completeBtn.classList.add('scale-105', 'shadow-emerald-500/50');
             }
         });
 
         hiddenInput.addEventListener('keyup', (e) => {
-            // Modifier tuşları takip et
-            if (e.key === "Shift") {
-                shiftPressed = false;
-                keystrokeData.push({
-                    key: e.key,
-                    code: e.code,
-                    event_type: 'keyup',
-                    timestamp: performance.now(),
-                    is_modifier: true
-                });
-                return;
-            }
-            if (e.key === "Control") {
-                ctrlPressed = false;
-                return;
-            }
-            if (e.key === "Alt") {
-                altPressed = false;
-                return;
-            }
+            if (e.key === "Shift") shiftPressed = false;
+            if (e.key === "Control") ctrlPressed = false;
+            if (e.key === "Alt") altPressed = false;
 
-            // Normal tuş keyup
             keystrokeData.push({
                 key: e.key,
                 code: e.code,
                 event_type: 'keyup',
                 timestamp: performance.now(),
-                is_modifier: true,
-                shift_pressed: shiftPressed,
-                position: currentIndex
+                shift_pressed: shiftPressed
             });
         });
 
-        // --- Kaydı Tamamla ---
+        // --- Adım Geçişleri ---
+        async function goToStep2() {
+            const username = document.getElementById('username').value;
+            if (!username) return alert("Lütfen kullanıcı adı girin.");
+
+            step1.classList.add('opacity-0', 'translate-x-[-20px]');
+            setTimeout(async () => {
+                step1.classList.add('hidden');
+                step2.classList.remove('hidden');
+
+                // 3-Step Indicator
+                if (!document.getElementById('roundIndicator')) {
+                    const header = step2.querySelector('.text-center');
+                    const indicator = document.createElement('div');
+                    indicator.id = 'roundIndicator';
+                    indicator.className = 'flex items-center justify-center gap-2 mb-6 select-none';
+                    indicator.innerHTML = `
+                        <!-- Step 1 -->
+                        <div class="flex flex-col items-center gap-1 group">
+                            <div id="ind-1" class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold shadow-lg shadow-blue-500/50 animate-pulse transition-all">1</div>
+                            <span class="text-[10px] text-blue-400 font-bold uppercase tracking-wider">Analiz</span>
+                        </div>
+                        
+                        <div class="w-12 h-1 bg-slate-700/50 rounded-full overflow-hidden mb-4">
+                             <div id="bar-1" class="h-full bg-blue-500/50 w-0 transition-all duration-1000"></div>
+                        </div>
+
+                        <!-- Step 2 -->
+                        <div class="flex flex-col items-center gap-1 group opacity-50 transition-all" id="step-group-2">
+                            <div id="ind-2" class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white text-xs font-bold ring-1 ring-slate-600 transition-all">2</div>
+                            <span class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Doğrulama</span>
+                        </div>
+
+                        <div class="w-12 h-1 bg-slate-700/50 rounded-full overflow-hidden mb-4">
+                             <div id="bar-2" class="h-full bg-purple-500/50 w-0 transition-all duration-1000"></div>
+                        </div>
+
+                        <!-- Step 3 -->
+                        <div class="flex flex-col items-center gap-1 group opacity-50 transition-all" id="step-group-3">
+                            <div id="ind-3" class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white text-xs font-bold ring-1 ring-slate-600 transition-all">3</div>
+                            <span class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Final</span>
+                        </div>
+                    `;
+                    header.insertBefore(indicator, header.firstChild);
+                }
+
+                await fetchText();
+                step2.classList.add('animate-fadeIn');
+            }, 300);
+        }
+
+        // --- Kaydı Tamamla (3 Adımlı Mantık) ---
         async function finishRegistration() {
-            // Doğruluk oranını hesapla
+            // Stats Calculations
             const totalKeyPresses = correctKeyCount + incorrectKeyCount;
             const accuracyRate = totalKeyPresses > 0 ? (correctKeyCount / totalKeyPresses) * 100 : 0;
+
+            // WPM Estimate
+            let wpm = 0;
+            if (testStartTime) {
+                const elapsedMinutes = (performance.now() - testStartTime) / 1000 / 60;
+                const words = currentIndex / 5;
+                wpm = elapsedMinutes > 0 ? Math.round(words / elapsedMinutes) : 0;
+            }
 
             const currentMetadata = {
                 correct_keys: correctKeyCount,
                 incorrect_keys: incorrectKeyCount,
                 accuracy_rate: accuracyRate,
+                wpm: wpm,
                 target_text: targetText,
                 total_keystrokes: keystrokeData.length
             };
 
+            // --- ROUND 1 COMPLETE ---
             if (currentRound === 1) {
-                // Round 1 Complete
                 firstRoundData = [...keystrokeData];
                 firstRoundMetadata = currentMetadata;
 
-                alert("Harika! Şimdi daha iyi bir analiz için lütfen metni bir kez daha yazınız.");
+                // UI Feedback
+                completeBtn.innerHTML = '<i class="fas fa-check"></i> Adım 1 Tamamlandı';
+                setTimeout(() => {
+                    alert("Harika! İlk analiz tamamlandı.\nŞimdi 2. aşama için farklı bir metin yazınız.");
 
-                currentRound = 2;
-                resetTest(true); // true means prepare for round 2
+                    // Prepare Round 2
+                    currentRound = 2;
+                    resetTest(true);
 
-                // Update UI for Round 2
-                const indicator = document.getElementById('roundIndicator');
-                if (indicator) {
-                    indicator.innerHTML = `
-                        <div class="flex items-center gap-2 opacity-50">
-                            <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-emerald-400 text-xs font-bold ring-1 ring-emerald-500/30">
-                                <i class="fas fa-check"></i>
-                            </div>
-                            <span class="text-slate-400 text-sm font-semibold">Profil Analizi</span>
-                        </div>
-                        <div class="w-16 h-1 bg-slate-700 rounded-full overflow-hidden">
-                            <div class="h-full bg-purple-500 w-full rounded-full transition-all duration-1000"></div>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <div class="w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center text-white text-xs font-bold shadow-lg shadow-purple-500/50 animate-pulse">2</div>
-                            <span class="text-purple-400 text-sm font-bold tracking-wide">Doğrulama</span>
-                        </div>
-                    `;
-                }
+                    // Update Indicator 1->2
+                    document.getElementById('ind-1').classList.replace('bg-blue-500', 'bg-emerald-500'); // Checkmark
+                    document.getElementById('ind-1').innerHTML = '<i class="fas fa-check"></i>';
+                    document.getElementById('ind-1').classList.remove('animate-pulse');
 
-                await fetchText();
+                    document.getElementById('bar-1').classList.replace('w-0', 'w-full');
 
+                    // Activate Step 2
+                    document.getElementById('step-group-2').classList.remove('opacity-50');
+                    const ind2 = document.getElementById('ind-2');
+                    ind2.classList.replace('bg-slate-700', 'bg-purple-500');
+                    ind2.classList.remove('ring-1', 'ring-slate-600');
+                    ind2.classList.add('shadow-lg', 'shadow-purple-500/50', 'animate-pulse');
+
+                    fetchText();
+                }, 500);
                 return;
             }
 
-            // Round 2 Complete - Send both data
+            // --- ROUND 2 COMPLETE ---
+            if (currentRound === 2) {
+                secondRoundData = [...keystrokeData];
+                secondRoundMetadata = currentMetadata;
+
+                // UI Feedback
+                completeBtn.innerHTML = '<i class="fas fa-check"></i> Adım 2 Tamamlandı';
+                setTimeout(() => {
+                    alert("Mükemmel! Son aşamaya geçiyoruz.\nBu son metin ile profiliniz tamamlanacak.");
+
+                    // Prepare Round 3
+                    currentRound = 3;
+                    resetTest(true);
+
+                    // Update Indicator 2->3
+                    document.getElementById('ind-2').classList.replace('bg-purple-500', 'bg-emerald-500');
+                    document.getElementById('ind-2').innerHTML = '<i class="fas fa-check"></i>';
+                    document.getElementById('ind-2').classList.remove('animate-pulse');
+
+                    document.getElementById('bar-2').classList.replace('w-0', 'w-full');
+
+                    // Activate Step 3
+                    document.getElementById('step-group-3').classList.remove('opacity-50');
+                    const ind3 = document.getElementById('ind-3');
+                    ind3.classList.replace('bg-slate-700', 'bg-pink-500');
+                    ind3.classList.remove('ring-1', 'ring-slate-600');
+                    ind3.classList.add('shadow-lg', 'shadow-pink-500/50', 'animate-pulse');
+
+                    fetchText();
+                }, 500);
+                return;
+            }
+
+            // --- ROUND 3 COMPLETE (FINAL SUBMIT) ---
             const payload = {
                 username: document.getElementById('username').value,
                 email: "",
                 keystrokes: firstRoundData,
-                keystrokes_2: keystrokeData,
+                keystrokes_2: secondRoundData,  // Now defined
+                keystrokes_3: keystrokeData,    // Current (3rd) round
                 metadata: firstRoundMetadata,
-                metadata_2: currentMetadata
+                metadata_2: secondRoundMetadata,
+                metadata_3: currentMetadata
             };
 
             completeBtn.disabled = true;
-            completeBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Kaydediliyor...';
+            completeBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Profil Oluşturuluyor...';
 
             const res = await fetch('/api/register', {
                 method: 'POST',

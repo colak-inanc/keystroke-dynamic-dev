@@ -5,12 +5,13 @@ from pathlib import Path
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models, callbacks, regularizers
-from app.services import DATA_DIR, MODEL_PATH, get_stable_key_id, reload_model
+from sklearn.utils import class_weight
+from sklearn.model_selection import GroupShuffleSplit
+from app.services import DATA_DIR, MODEL_PATH, VOCAB_SIZE, get_stable_key_id, reload_model
 from app.imposter_generator import generate_imposter_data
 
 training_lock = threading.Lock()
 
-# --- CONFIGURATION (Hyperparameters) ---
 TIME_SCALE = 7.0
 MAX_LATENCY = 3000.0
 TARGET_LENGTH = 50
@@ -28,6 +29,10 @@ def process_file_for_training(filepath):
             data = json.load(f)
         
         keystrokes = data.get('keystrokes', [])
+        if data.get('keystrokes_2'):
+            keystrokes.extend(data['keystrokes_2'])
+        if data.get('keystrokes_3'):
+            keystrokes.extend(data['keystrokes_3'])
         username = data.get('username')
         
         if not keystrokes or not username:
@@ -51,20 +56,35 @@ def process_file_for_training(filepath):
             timestamp = event['timestamp']
 
             if event_type == "keydown":
-                keydown_events[key] = timestamp
+                curr_dd = 0.0
+                if previous_keydown_time is not None:
+                    curr_dd = timestamp - previous_keydown_time
+                
+                keydown_events.setdefault(key, []).append((timestamp, curr_dd))
                 previous_keydown_time = timestamp
                 if key in {"Backspace", "Shift"}: continue
 
             elif event_type == "keyup":
                 if key in {"Shift", "Backspace"}:
-                    if key in keydown_events: del keydown_events[key]
+                    if key in keydown_events: 
+                       keydown_events[key].pop()
+                       if not keydown_events[key]: del keydown_events[key]
                     continue
 
                 dwell_time = 0.0
-                keydown_time = keydown_events.get(key)
-                if keydown_time:
+                curr_dd = 0.0
+                
+                # Fix: Stack (LIFO) pop
+                kd_data = None
+                if key in keydown_events and keydown_events[key]:
+                    kd_data = keydown_events[key].pop()
+                    if not keydown_events[key]:
+                        del keydown_events[key]
+                
+                keydown_time = None
+                if kd_data:
+                    keydown_time, curr_dd = kd_data
                     dwell_time = timestamp - keydown_time
-                    del keydown_events[key]
                 
                 flight_time = (keydown_time - previous_keyup_time) if (previous_keyup_time and keydown_time) else 0.0
                 inter_key_delay = (timestamp - keystrokes[idx - 1]['timestamp']) if idx > 0 else 0.0
@@ -86,12 +106,8 @@ def process_file_for_training(filepath):
                 time_vector.append(min(dwell_time / 200.0, 1.0))
                 
                 # Feature 5: Down-Down Latency
-                if previous_keydown_time and keydown_time:
-                    dd_lat = keydown_time - previous_keydown_time
-                    dd_lat = max(0.0, min(dd_lat, MAX_LATENCY))
-                    time_vector.append(np.log1p(dd_lat) / TIME_SCALE)
-                else:
-                    time_vector.append(0.0)
+                dd_lat = max(0.0, min(curr_dd, MAX_LATENCY))
+                time_vector.append(np.log1p(dd_lat) / TIME_SCALE)
 
                 # KEY ID (Stable Mapping)
                 key_id = get_stable_key_id(key)
@@ -136,26 +152,30 @@ def process_file_for_training(filepath):
 def build_model(num_classes):
     """
     Robust, Balanced Architecture for Production.
-    - Uses 32 units to balance capacity and overfitting.
+    - Uses GaussianNoise for input robustness.
+    - Uses Bi-LSTM / LSTM with L2 Regularization.
     - Uses Dropout (0.4) for regularization.
-    - Uses L2 Regularization.
     """
-    # 1. Time Features Input (Continuous)
     input_time = layers.Input(shape=(TARGET_LENGTH, 5), name="input_time")
+    
     masked_time = layers.Masking(mask_value=0.0)(input_time)
+    
+    noisy_time = layers.GaussianNoise(0.01)(masked_time)
     
     # Bi-LSTM for time
     bilstm_time = layers.Bidirectional(
-        layers.LSTM(32, return_sequences=False, kernel_regularizer=regularizers.l2(0.001))
-    )(masked_time)
+        layers.LSTM(64, return_sequences=False, kernel_regularizer=regularizers.l2(0.001))
+    )(noisy_time)
     bilstm_time = layers.BatchNormalization()(bilstm_time)
-    bilstm_time = layers.Dropout(0.4)(bilstm_time)
+    bilstm_time = layers.Dropout(0.5)(bilstm_time)
 
     # 2. Key Sequence Input (Categorical)
     input_key = layers.Input(shape=(TARGET_LENGTH,), dtype="int32", name="input_key")
     
     # Embedding for key IDs
-    embedding = layers.Embedding(input_dim=1000, output_dim=32, mask_zero=True)(input_key)
+    embedding = layers.Embedding(input_dim=VOCAB_SIZE, output_dim=32, mask_zero=True)(input_key)
+    # Add minimal regular dropout to embedding
+    embedding = layers.SpatialDropout1D(0.2)(embedding)
     
     # LSTM for keys
     lstm_key = layers.LSTM(32, return_sequences=False, kernel_regularizer=regularizers.l2(0.001))(embedding)
@@ -165,8 +185,8 @@ def build_model(num_classes):
     # 3. Merge & Classify
     merged = layers.Concatenate()([bilstm_time, lstm_key])
     
-    dense = layers.Dense(32, activation="relu", kernel_regularizer=regularizers.l2(0.001))(merged)
-    dense = layers.Dropout(0.4)(dense)
+    dense = layers.Dense(64, activation="relu", kernel_regularizer=regularizers.l2(0.001))(merged)
+    dense = layers.Dropout(0.5)(dense)
     
     output = layers.Dense(num_classes, activation="softmax")(dense)
 
@@ -187,8 +207,9 @@ def train_model():
     try:
         logging.info("Starting PRODUCTION model training...")
         
-        json_files = list(DATA_DIR.rglob("*.json"))
-        logging.info(f"Found {len(json_files)} data files.")
+        # Sort files to ensure stable session ordering (s1, s2, s3)
+        json_files = sorted(list(DATA_DIR.rglob("*.json")))
+        logging.info(f"Found {len(json_files)} total data files.")
         
         all_X_time = []
         all_X_key = []
@@ -198,7 +219,9 @@ def train_model():
         current_label = 0
         
         # 1. Load Real Data
-        for f in json_files:
+        groups = [] # Track sessions for GroupKFold
+        
+        for file_idx, f in enumerate(json_files):
             if "login_" in f.name and "raw_data" not in f.name: continue 
             
             xt, xk, user = process_file_for_training(f)
@@ -212,6 +235,7 @@ def train_model():
                     all_X_time.append(xt[i])
                     all_X_key.append(xk[i])
                     all_y.append(label_id)
+                    groups.append(file_idx)
 
         real_sample_count = len(all_X_time)
         if real_sample_count == 0:
@@ -221,15 +245,14 @@ def train_model():
         logging.info(f"Total REAL samples: {real_sample_count}")
 
         # 2. Dynamic Imposter Data Generation
-        # Strategy: Strict 1:1 Ratio. Generate exactly as many imposters as real samples.
-        # This prevents the "Imposter" class from dominating class weights or the loss function.
-        n_imposter_samples = real_sample_count
+        # User requested 1:0.5 ratio (Real:Imposter) to reduce False Rejection bias
+        n_imposter_samples = int(real_sample_count * 0.5)
         
-        # Safety floor: Ensure at least some imposters if real data is tiny (for testing)
+        # Minimum safe amount for stability
         if n_imposter_samples < 50:
             n_imposter_samples = 50
 
-        logging.info(f"Generating {n_imposter_samples} synthetic imposter samples (Balanced with Real Data)...")
+        logging.info(f"Generating {n_imposter_samples} synthetic imposter samples (Ratio 1:0.5)...")
         X_time_imp, X_key_imp = generate_imposter_data(n_samples=n_imposter_samples)
         
         imposter_label = current_label
@@ -239,6 +262,8 @@ def train_model():
             all_X_time.append(X_time_imp[i])
             all_X_key.append(X_key_imp[i])
             all_y.append(imposter_label)
+            # Assign unique group ID to each imposter sample to allow random splitting
+            groups.append(100000 + i)
             
         logging.info(f"Final Dataset Size: {len(all_X_time)} samples. Classes: {len(label_map)}")
 
@@ -246,53 +271,144 @@ def train_model():
             logging.warning("Not enough classes to train (Need at least 1 user + Imposters).")
             return
 
-        X_time_train = np.array(all_X_time, dtype=np.float32)
-        X_key_train = np.array(all_X_key, dtype=np.int32)
-        y_train = np.array(all_y, dtype=np.int32)
+        X_time_all = np.array(all_X_time, dtype=np.float32)
+        X_key_all = np.array(all_X_key, dtype=np.int32)
+        y_all = np.array(all_y, dtype=np.int32)
+        groups_all = np.array(groups)
 
-        # Stratified Shuffle Split
-        from sklearn.model_selection import StratifiedShuffleSplit
-        # Use StratifiedShuffleSplit for better handling of small/imbalanced sets
-        sss = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+        # 3. Stratified Group Splitting (Per-User)
+        logging.info("Splitting Train/Val using Stratified Group Logic (per user)...")
         
-        for train_index, val_index in sss.split(X_time_train, y_train):
-            X_time_tr, X_time_val = X_time_train[train_index], X_time_train[val_index]
-            X_key_tr, X_key_val = X_key_train[train_index], X_key_train[val_index]
-            y_tr, y_val = y_train[train_index], y_train[val_index]
+        train_indices_list = []
+        val_indices_list = []
+        
+        unique_classes = np.unique(y_all)
+        gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+        
+        for cls in unique_classes:
+            cls_mask = (y_all == cls)
+            cls_indices = np.where(cls_mask)[0]
+            cls_groups = groups_all[cls_indices]
+            
+            # If a user has only 1 group (session), we must put it in train 
+            # (or val, but train is better for learning).
+            # GroupShuffleSplit might fail or put 0 in val if n_groups=1.
+            n_groups = len(np.unique(cls_groups))
+            if n_groups < 2:
+                # If only 1 session, we MUST split it internally (e.g. 80/20) to have SOME validation data.
+                # This risks slight leakage due to sliding windows, but is better than NO validation for the user.
+                logging.warning(f"Class {cls} has only 1 session. Forcing internal split (Warning: Potential leakage).")
+                from sklearn.model_selection import StratifiedShuffleSplit
+                sss = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+                # Dummy 'y' for split
+                dummy_y = np.zeros(len(cls_indices))
+                tr_i, val_i = next(sss.split(cls_indices, dummy_y))
+                train_indices_list.extend(cls_indices[tr_i])
+                val_indices_list.extend(cls_indices[val_i])
+                continue
 
-        from sklearn.utils import class_weight
-        classes = np.unique(y_tr)
-        weights = class_weight.compute_class_weight(class_weight='balanced', classes=classes, y=y_tr)
+            try:
+                tr_i, val_i = next(gss.split(cls_indices, groups=cls_groups))
+                # Map back to global indices
+                train_indices_list.extend(cls_indices[tr_i])
+                val_indices_list.extend(cls_indices[val_i])
+            except Exception:
+                # Fallback to random split if group split fails
+                logging.warning(f"Group split failed for class {cls}. Falling back to random split.")
+                from sklearn.model_selection import StratifiedShuffleSplit
+                sss = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+                dummy_y = np.zeros(len(cls_indices))
+                tr_i, val_i = next(sss.split(cls_indices, dummy_y))
+                train_indices_list.extend(cls_indices[tr_i])
+                val_indices_list.extend(cls_indices[val_i])
+                
+        # Convert to numpy arrays
+        train_idx = np.array(train_indices_list)
+        val_idx = np.array(val_indices_list)
+        
+        # Shuffle the resulting sets to mix classes
+        np.random.shuffle(train_idx)
+        np.random.shuffle(val_idx)
+
+        X_time_train, X_time_val = X_time_all[train_idx], X_time_all[val_idx]
+        X_key_train, X_key_val = X_key_all[train_idx], X_key_all[val_idx]
+        y_train, y_val = y_all[train_idx], y_all[val_idx]
+        
+        logging.info(f"Stratified Split Result -> Train: {len(y_train)} samples, Val: {len(y_val)} samples.")
+        
+        # Verify coverage
+        covered_classes = len(np.unique(y_val))
+        total_classes = len(unique_classes)
+        logging.info(f"Validation Class Coverage: {covered_classes}/{total_classes}")
+
+        # SAFETY CHECK: If validation set is empty (e.g. all users have only 1 session),
+        # force a standard shuffle split to avoid crash. Leakage risk is acceptable vs crash.
+        if len(val_idx) == 0:
+             logging.warning("Validation set is empty! (Single sessions detected). Falling back to random split.")
+             # Take 20% of training data for validation
+             indices = np.arange(len(train_idx))
+             np.random.shuffle(indices)
+             split_point = int(len(indices) * 0.8)
+             
+             train_idx_new = train_idx[indices[:split_point]]
+             val_idx_new = train_idx[indices[split_point:]]
+             
+             X_time_train, X_time_val = X_time_all[train_idx_new], X_time_all[val_idx_new]
+             X_key_train, X_key_val = X_key_all[train_idx_new], X_key_all[val_idx_new]
+             y_train, y_val = y_all[train_idx_new], y_all[val_idx_new]
+             
+             logging.info(f"Fallback Split -> Train: {len(y_train)}, Val: {len(y_val)}")
+
+        # --- FINAL FULL TRAINING ---
+        logging.info("Training Final Production Model (Groupled Split)...")
+        
+        classes = np.unique(y_train)
+        weights = class_weight.compute_class_weight(class_weight='balanced', classes=classes, y=y_train)
         class_weight_dict = dict(zip(classes, weights))
         
-        logging.info(f"Class Weights: {class_weight_dict}")
-
-        # 3. Build & Train
         model = build_model(num_classes=len(label_map))
         
+        # Enhanced Callback Strategy
         callbacks_list = [
-            callbacks.EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True),
-            callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5),
-            callbacks.ModelCheckpoint(str(MODEL_PATH), save_best_only=True, monitor='val_loss')
+            # Stop if validation loss doesn't improve for 15 epochs (Prevents Overfitting)
+            callbacks.EarlyStopping(
+                monitor='val_loss', 
+                patience=15, 
+                restore_best_weights=True,
+                verbose=1
+            ),
+            # Reduce LR if validation loss plateaus (Fine-tuning)
+            callbacks.ReduceLROnPlateau(
+                monitor='val_loss', 
+                factor=0.5, 
+                patience=5, 
+                min_lr=0.00001,
+                verbose=1
+            ),
+            # Save best model based on validation loss
+            callbacks.ModelCheckpoint(
+                str(MODEL_PATH), 
+                save_best_only=True, 
+                monitor='val_loss'
+            )
         ]
-
+        
+        # Train with explicit Group-based Validation Data
         history = model.fit(
-            [X_time_tr, X_key_tr],
-            y_tr,
+            [X_time_train, X_key_train],
+            y_train,
             epochs=EPOCHS,
             batch_size=BATCH_SIZE,
-            validation_data=([X_time_val, X_key_val], y_val),
             class_weight=class_weight_dict,
             callbacks=callbacks_list,
-            verbose=1
+            verbose=1,
+            validation_data=([X_time_val, X_key_val], y_val)
         )
         
-        # 4. Save Final State
-        # ModelCheckpoint handles the best model save, but we ensure label map is saved.
-        # Check if ModelCheckpoint saved anything (it should have), if not, save current.
         if not MODEL_PATH.exists():
              model.save(MODEL_PATH)
-
+        
+        # Ensure label map matches current training
         with open(MODEL_PATH.parent / "label_map.json", "w", encoding='utf-8') as f:
             json.dump(label_map, f)
             

@@ -106,23 +106,15 @@ SPECIAL_KEYS = [
     "ContextMenu"
 ]
 
-# Türkçe karakterler ve yaygın semboller
 TURKISH_CHARS = "çğışöü"
-# Standart basılabilir ASCII karakterleri (harfler, rakamlar, noktalama)
-# string.printable kullanımı yerine manuel/kontrollü liste daha güvenlidir ama
-# string.printable şunları içerir: digits + ascii_letters + punctuation + whitespace
+
 import string
 PRINTABLE_ASCII = string.digits + string.ascii_lowercase + string.punctuation
 
-# Master Vocabulary Listesi
-# Sıralama ÖNEMLİDİR. Bu liste değişirse MODEL RETRAIN edilmelidir.
 VOCAB_LIST = SPECIAL_KEYS + list(TURKISH_CHARS) + list(PRINTABLE_ASCII)
 
-# Tekrarları temizleyelim (örn. Space hem special hem printable'da olabilir)
-# Not: Sırayı korumak için dict.fromkeys kullanıyoruz (Python 3.7+ için sıralı).
 VOCAB_LIST = list(dict.fromkeys(VOCAB_LIST))
 
-# Map oluştur: "a" -> 45, "Enter" -> 4 gibi.
 CHAR_TO_IDX = {char: idx for idx, char in enumerate(VOCAB_LIST)}
 IDX_TO_CHAR = {idx: char for char, idx in CHAR_TO_IDX.items()}
 
@@ -130,15 +122,61 @@ VOCAB_SIZE = len(VOCAB_LIST)
 UNK_IDX = CHAR_TO_IDX["<UNK>"]
 
 def get_stable_key_id(key: str) -> int:
-    """
-    Verilen tuş ismini veya karakteri tamsayı indekse çevirir.
-    Eğer tuş vocabulary içinde yoksa <UNK> indeksini (1) döner.
-    """
     if not key:
         return UNK_IDX
-        
     return CHAR_TO_IDX.get(key, UNK_IDX)
-# --- CUSTOM VOCABULARY MAPPING END ---
+
+def reconstruct_text_from_keystrokes(keystrokes: List[KeystrokeData]) -> str:
+    typed_chars = []
+    for k in keystrokes:
+        if k.event_type == "keydown":
+            if k.key == "Backspace":
+                if typed_chars:
+                    typed_chars.pop()
+            # Handle both "Space" (legacy/browser-dependent) and " " (normalized)
+            elif k.key == "Space" or k.key == " ":
+                typed_chars.append(" ")
+            # Allow all single characters
+            elif len(k.key) == 1:
+                typed_chars.append(k.key)
+            
+    return "".join(typed_chars)
+
+
+def calculate_text_similarity(text1: str, text2: str) -> float:
+    from difflib import SequenceMatcher
+    if not text1 or not text2:
+        return 0.0
+    return SequenceMatcher(None, text1, text2, autojunk=False).ratio()
+
+
+def check_physiological_validity(keystrokes: List[KeystrokeData]) -> dict:
+    if len(keystrokes) < 5:
+        return {"valid": False, "reason": "Veri çok kısa (yetersiz tuş vuruşu)."}
+    start = keystrokes[0].timestamp
+    end = keystrokes[-1].timestamp
+    duration_min = (end - start) / 60000.0
+    
+    if duration_min > 0:
+        keydown_count = len([k for k in keystrokes if k.event_type == "keydown" and k.key != "Backspace"])
+        wpm = (keydown_count / 5) / duration_min
+        
+        if wpm > 250:
+            return {"valid": False, "reason": f"İnsanüstü yazma hızı tespit edildi (Tahmini {int(wpm)} WPM)."}
+    
+    keydowns = [k for k in keystrokes if k.event_type == "keydown"]
+    if len(keydowns) > 10:
+        latencies = []
+        for i in range(1, len(keydowns)):
+            lat = keydowns[i].timestamp - keydowns[i-1].timestamp
+            latencies.append(lat)
+        
+        if len(latencies) > 5:
+            std_dev = np.std(latencies)
+            if std_dev < 0.5: 
+                return {"valid": False, "reason": "Robotik/Yapay tuş vuruşu tespit edildi (Sıfır varyans)."}
+
+    return {"valid": True, "reason": ""}
 
 
 
@@ -205,20 +243,38 @@ def prepare_sequence_for_model(keystrokes: List[KeystrokeData], features: dict) 
         event_type = event.event_type
 
         if event_type == "keydown":
-            keydown_events[key] = timestamp
+            # Calculate DD Latency immediately at KeyDown
+            current_dd = 0.0
+            if previous_keydown_time is not None:
+                current_dd = timestamp - previous_keydown_time
+
+            # Store both timestamp and the calculated DD latency
+            # Fix: Use a list (Stack) to handle repeat keys or fast overlaps (LIFO)
+            if key not in keydown_events:
+                keydown_events[key] = []
+            keydown_events[key].append((timestamp, current_dd))
+            
             previous_keydown_time = timestamp
             if key in {"Backspace", "Shift"}: continue
 
         elif event_type == "keyup":
             if key in {"Shift", "Backspace"}:
-                if key in keydown_events: del keydown_events[key]
+                if key in keydown_events: 
+                    keydown_events[key].pop()
+                    if not keydown_events[key]: del keydown_events[key]
                 continue
 
             dwell_time = 0.0
-            keydown_time = keydown_events.get(key)
-            if keydown_time:
+            current_dd = 0.0
+            
+            # Fix: Pop from stack (LIFO) logic
+            keydown_time = None
+            if key in keydown_events and keydown_events[key]:
+                keydown_time, current_dd = keydown_events[key].pop()
+                if not keydown_events[key]:
+                    del keydown_events[key]
+                
                 dwell_time = timestamp - keydown_time
-                del keydown_events[key]
             
             flight_time = (keydown_time - previous_keyup_time) if (previous_keyup_time and keydown_time) else 0.0
             inter_key_delay = (timestamp - keystrokes[idx-1].timestamp) if idx > 0 else 0.0
@@ -240,12 +296,9 @@ def prepare_sequence_for_model(keystrokes: List[KeystrokeData], features: dict) 
             time_vector.append(min(dwell_time / 200.0, 1.0))
 
             # Feature 5: Down-Down Latency
-            if previous_keydown_time and keydown_time:
-                dd_lat = keydown_time - previous_keydown_time
-                dd_lat = max(0.0, min(dd_lat, MAX_LATENCY)) # Clamp
-                time_vector.append(np.log1p(dd_lat) / TIME_SCALE)
-            else:
-                time_vector.append(0.0)
+            # Use the value calculated at KeyDown time (stored in current_dd)
+            dd_lat = max(0.0, min(current_dd, MAX_LATENCY))
+            time_vector.append(np.log1p(dd_lat) / TIME_SCALE)
 
             # Pad time_vector if needed (though we fixed it to 5 features above)
             # If loaded_model expects more features for timing, pad here
@@ -640,11 +693,14 @@ def extract_keystroke_features(keystrokes: List[KeystrokeData]) -> dict:
         last_event_time = timestamp
 
         if event_type == "keydown":
-            keydown_events[key] = {
+            if key not in keydown_events:
+                keydown_events[key] = []
+            
+            keydown_events[key].append({
                 "timestamp": timestamp,
                 "key": key,
                 "code": key_code
-            }
+            })
             features["key_down_times"].append(timestamp)
 
             key_event = {
@@ -766,12 +822,19 @@ def extract_keystroke_features(keystrokes: List[KeystrokeData]) -> dict:
                 })
 
             if key in {"Shift", "Backspace"}:
+                # If stack exists, remove one instance or clear? 
+                # Usually purely ignored keys might need cleanup if we track them
                 if key in keydown_events:
-                    del keydown_events[key]
+                    keydown_events[key].pop() # Remove last
+                    if not keydown_events[key]: del keydown_events[key]
                 continue
 
-            keydown_info = keydown_events.get(key)
-            if keydown_info:
+            # Fix: LIFO Pop for extraction
+            if key in keydown_events and keydown_events[key]:
+                keydown_info = keydown_events[key].pop()
+                if not keydown_events[key]:
+                     del keydown_events[key] # Cleanup if empty
+
                 dwell_time = timestamp - keydown_info["timestamp"]
                 features["dwell_times"].append(dwell_time)
 
@@ -790,8 +853,6 @@ def extract_keystroke_features(keystrokes: List[KeystrokeData]) -> dict:
                     "keydown_timestamp": keydown_info["timestamp"],
                     "keyup_timestamp": timestamp
                 })
-
-                del keydown_events[key]
 
             previous_keyup_time = timestamp
             previous_key = key

@@ -105,11 +105,8 @@
         <!-- Biometric Auth Step -->
         <div id="authStep" class="hidden w-full">
             <div class="text-center mb-6">
-                <h3
-                    class="text-3xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-4 flex items-center justify-center gap-3">
-                    <i class="fas fa-user-lock scanning"></i>
-                    Kimlik Doğrulanıyor
-                </h3>
+                <!-- Title removed -->
+
                 <p class="text-slate-400 text-sm mb-6">
                     <i class="fas fa-shield-check text-emerald-400 mr-2"></i>
                     Klavye dinamikleriniz analiz ediliyor
@@ -254,6 +251,11 @@
         let incorrectKeyCount = 0;
         let correctKeyCount = 0;
         let username = "";
+        let accumulatedTargetText = "";
+
+        // Multi-Step State
+        let currentStep = 1;
+        const totalSteps = 2;
 
         const loginForm = document.getElementById('loginForm');
         const authStep = document.getElementById('authStep');
@@ -276,17 +278,46 @@
                 loginForm.classList.add('hidden');
                 authStep.classList.remove('hidden');
 
+                // Add Step Indicator if not exists
+                if (!document.getElementById('loginStepIndicator')) {
+                    const header = authStep.querySelector('.text-center');
+                    const indicator = document.createElement('div');
+                    indicator.id = 'loginStepIndicator';
+                    indicator.className = 'flex items-center justify-center gap-2 mb-4';
+                    indicator.innerHTML = `
+                         <span class="text-xs font-bold uppercase tracking-wider text-blue-400">Adım:</span>
+                         <div class="flex gap-2">
+                            <div id="step-dot-1" class="w-20 h-2 bg-blue-500 rounded-full transition-all duration-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
+                            <div id="step-dot-2" class="w-20 h-2 bg-slate-700 rounded-full transition-all duration-500"></div>
+                         </div>
+                    `;
+                    header.insertBefore(indicator, header.firstChild);
+                }
+
+                currentStep = 1;
+                updateStepUI();
                 await fetchText();
 
                 authStep.classList.add('animate-fadeIn');
             }, 300);
         }
 
+        function updateStepUI() {
+            if (currentStep === 1) {
+                document.getElementById('step-dot-1').className = "w-20 h-2 bg-blue-500 rounded-full transition-all duration-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]";
+                document.getElementById('step-dot-2').className = "w-20 h-2 bg-slate-700 rounded-full transition-all duration-500";
+            } else {
+                document.getElementById('step-dot-1').className = "w-20 h-2 bg-emerald-500 rounded-full transition-all duration-500";
+                document.getElementById('step-dot-2').className = "w-20 h-2 bg-blue-500 rounded-full transition-all duration-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]";
+            }
+        }
+
         async function fetchText() {
             textDisplay.innerHTML = '<span class="text-blue-400 animate-pulse"><i class="fas fa-spinner fa-spin mr-2"></i>Doğrulama metni hazırlanıyor...</span>';
 
             try {
-                const res = await fetch('/api/get-text');
+                // Pass currentStep as generic "round" to get varied text
+                const res = await fetch(`/api/get-text?round=${currentStep}`);
                 const data = await res.json();
                 targetText = data.text;
                 renderText();
@@ -330,8 +361,53 @@
                 verifyBtn.disabled = false;
                 verifyBtn.classList.remove('opacity-50', 'cursor-not-allowed');
                 verifyBtn.classList.add('scale-105', 'shadow-emerald-500/50');
+
+                if (currentStep < totalSteps) {
+                    verifyBtn.innerHTML = `
+                        <span class="flex items-center gap-3 relative z-10">
+                            <span>Sonraki Adım</span>
+                            <i class="fas fa-arrow-right"></i>
+                        </span>
+                     `;
+                    verifyBtn.onclick = nextStep;
+                } else {
+                    verifyBtn.innerHTML = `
+                        <span class="flex items-center gap-3 relative z-10">
+                            <i class="fas fa-shield-check"></i>
+                            <span>Kimliği Doğrula</span>
+                            <i class="fas fa-arrow-right"></i>
+                        </span>
+                     `;
+                    verifyBtn.onclick = verifyIdentity;
+                }
             }
         }
+
+        async function nextStep() {
+            verifyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Hazırlanıyor...';
+            verifyBtn.disabled = true;
+
+            // Accumulate validation text
+            accumulatedTargetText += targetText;
+
+            // Brief pause
+            await new Promise(r => setTimeout(r, 500));
+
+            // Increment Step
+            currentStep++;
+            updateStepUI();
+
+            // Reset for next text (BUT KEEP KEYSTROKE DATA)
+            currentIndex = 0;
+
+            hiddenInput.value = "";
+            await fetchText();
+
+            verifyBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            verifyBtn.classList.remove('scale-105', 'shadow-emerald-500/50');
+        }
+
+        // ... (Keydown/Keyup listeners remain same, appending to keystrokeData) ... 
 
         hiddenInput.addEventListener('keydown', (e) => {
             if (e.key === "Shift") {
@@ -378,10 +454,22 @@
                 return;
             }
 
-            const isCorrect = e.key === expectedChar;
+
+            // --- Enhanced Key Capture ---
+            let charToCapture = e.key;
+
+            // Normalize Space
+            if (e.key === "Space" || e.code === "Space") {
+                charToCapture = " ";
+            } else if (e.key.length > 1) {
+                // Ignore other special keys (Enter, Tab, F-keys, etc.)
+                return;
+            }
+
+            const isCorrect = charToCapture === expectedChar;
 
             keystrokeData.push({
-                key: e.key,
+                key: charToCapture,
                 code: e.code,
                 event_type: 'keydown',
                 timestamp: performance.now(),
@@ -454,14 +542,17 @@
             const totalKeyPresses = correctKeyCount + incorrectKeyCount;
             const accuracyRate = totalKeyPresses > 0 ? (correctKeyCount / totalKeyPresses) * 100 : 0;
 
+            // Final text accumulation
+            const finalTargetText = accumulatedTargetText + targetText;
+
             const payload = {
                 username: username,
-                keystrokes: keystrokeData,
+                keystrokes: keystrokeData, // Contains BOTH steps data
                 metadata: {
                     correct_keys: correctKeyCount,
                     incorrect_keys: incorrectKeyCount,
                     accuracy_rate: accuracyRate,
-                    target_text: targetText,
+                    target_text: finalTargetText,
                     total_keystrokes: keystrokeData.length
                 }
             };
@@ -492,74 +583,66 @@
             }
         }
 
+        // --- Modal Handlers ---
+
         function showSuccessMessage(result) {
-            const confidence = result.confidence || 0;
-            const confidencePercent = parseFloat((confidence * 100).toFixed(2));
+            const modal = document.getElementById('successModal');
+            document.getElementById('modalUsername').textContent = result.username || username;
 
-            // Modal içeriğini doldur - hassas gösterim (2 ondalık)
-            document.getElementById('modalUsername').textContent = result.username || 'Kullanıcı';
-            document.getElementById('modalConfidence').textContent = confidencePercent.toFixed(2) + '%';
+            const confEl = document.getElementById('modalConfidence');
+            const badgeEl = document.getElementById('confidenceBadge');
 
-            // Confidence badge'i güncelle (gerçek değerlere göre)
-            const badge = document.getElementById('confidenceBadge');
-            if (confidencePercent >= 90) {
-                badge.className = 'confidence-badge high';
-                badge.textContent = 'Çok Yüksek';
-            } else if (confidencePercent >= 80) {
-                badge.className = 'confidence-badge high';
-                badge.textContent = 'Yüksek';
-            } else if (confidencePercent >= 70) {
-                badge.className = 'confidence-badge medium';
-                badge.textContent = 'Orta-Yüksek';
-            } else if (confidencePercent >= 60) {
-                badge.className = 'confidence-badge medium';
-                badge.textContent = 'Orta';
+            if (result.confidence) {
+                const confPercent = Math.round(result.confidence * 100);
+                confEl.textContent = `%${confPercent}`;
+
+                if (confPercent >= 90) {
+                    badgeEl.className = 'confidence-badge high';
+                    badgeEl.textContent = 'Yüksek';
+                } else if (confPercent >= 70) {
+                    badgeEl.className = 'confidence-badge medium';
+                    badgeEl.textContent = 'Orta';
+                } else {
+                    badgeEl.className = 'confidence-badge low';
+                    badgeEl.textContent = 'Düşük';
+                }
             } else {
-                badge.className = 'confidence-badge low';
-                badge.textContent = 'Düşük';
+                confEl.textContent = '-';
+                badgeEl.style.display = 'none';
             }
 
-            // Modal'ı göster
-            const modal = document.getElementById('successModal');
             modal.classList.add('show');
 
-            // 3 saniye sonra otomatik yönlendir
+            // Auto redirect after 3 seconds for better UX
             setTimeout(() => {
-                window.location.href = '/dashboard';
+                if (modal.classList.contains('show')) {
+                    closeSuccessModal();
+                }
             }, 3000);
         }
 
-        function closeSuccessModal() {
-            const modal = document.getElementById('successModal');
-            modal.classList.remove('show');
-            window.location.href = '/dashboard';
-        }
-
-        function showErrorMessage(message) {
-            verifyBtn.innerHTML = `<span class="flex items-center gap-3 relative z-10">
-                <i class="fas fa-shield-check"></i>
-                <span>Kimliği Doğrula</span>
-                <i class="fas fa-arrow-right"></i>
-            </span>`;
-            verifyBtn.disabled = false;
-            verifyBtn.classList.remove('scale-105', 'shadow-emerald-500/50');
-
-            // Error modal içeriğini doldur
-            document.getElementById('errorMessage').textContent = message || 'Bilinmeyen bir hata oluştu.';
-
-            // Modal'ı göster
+        function showErrorMessage(msg) {
             const modal = document.getElementById('errorModal');
+            const msgEl = document.getElementById('errorMessage');
+            msgEl.textContent = msg || "Bilinmeyen bir hata oluştu";
             modal.classList.add('show');
         }
 
+        function closeSuccessModal() {
+            document.getElementById('successModal').classList.remove('show');
+            window.location.href = "/dashboard";
+        }
+
         function closeErrorModal() {
-            const modal = document.getElementById('errorModal');
-            modal.classList.remove('show');
+            document.getElementById('errorModal').classList.remove('show');
         }
 
         function retryAuth() {
             closeErrorModal();
-            // Formu sıfırla ve tekrar dene
+            // Full Reset
+            currentStep = 1;
+            updateStepUI();
+
             currentIndex = 0;
             keystrokeData = [];
             correctKeyCount = 0;
@@ -567,23 +650,12 @@
             shiftPressed = false;
             ctrlPressed = false;
             altPressed = false;
+            accumulatedTargetText = "";
 
-            // Metni yeniden yükle
             fetchText();
         }
 
-        // Modal overlay'e tıklanınca kapat
-        document.getElementById('successModal').addEventListener('click', function (e) {
-            if (e.target === this) {
-                closeSuccessModal();
-            }
-        });
-
-        document.getElementById('errorModal').addEventListener('click', function (e) {
-            if (e.target === this) {
-                closeErrorModal();
-            }
-        });
+        // ... 
 
         function cancelAuth() {
             currentIndex = 0;
@@ -593,6 +665,11 @@
             shiftPressed = false;
             ctrlPressed = false;
             altPressed = false;
+            accumulatedTargetText = "";
+
+
+            // Reset Step UI
+            currentStep = 1;
 
             authStep.classList.add('hidden');
             loginForm.classList.remove('hidden', 'opacity-0', 'translate-x-[-20px]');

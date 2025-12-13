@@ -119,8 +119,14 @@ async def get_typing_text(round: int = 1):
 
     mock_text_1 = "teknolojinin hızla geliştiği günümüz dünyasında yazılım mühendisliği ve yapay zeka uygulamaları hayatımızın her alanında köklü bir değişim yaratmaktadır sürdürülebilir kalkınma hedefleri doğrultusunda verimliliği artırmak için çağdaş ve yenilikçi çözümler üretmek zorundayız özellikle kapsamlı veri analizi yöntemleri sayesinde karmaşık problemlerin üstesinden gelmek artık çok daha erişilebilir hale gelmiştir bu süreçte profesyonel yaklaşım ve disiplinli çalışma prensipleri mutlak başarının temel anahtarını oluşturmaktadır geleceği şekillendiren bu yenilikler insanlık adına umut verici bir potansiyel taşımaktadır"
     mock_text_2 = "küresel ölçekte yürütülen bilimsel çalışmalar toplumların refah seviyesini yükseltmek adına kritik bir rol oynamaktadır özellikle çevre bilincinin artmasıyla birlikte yenilenebilir enerji kaynaklarına yönelim hız kazanmıştır bu bağlamda rüzgar ve güneş enerjisi gibi alternatif yöntemler karbon ayak izini azaltmak için stratejik bir öneme sahiptir akademik disiplin ve sistematik araştırma teknikleri kullanılarak elde edilen veriler geleceğin inşasında sağlam bir temel oluşturur bilgiye erişimin kolaylaşmasıyla beraber inovasyon süreçleri de ivme kazanarak devam etmektedir"
+    mock_text_3 = "tarih boyunca insanoğlu sürekli bir arayış içinde olmuş ve bilinmeyeni keşfetme arzusuyla hareket etmiştir antik medeniyetlerin bıraktığı izler geçmişin derinliklerine ışık tutarken geleceğe dair ipuçları da sunmaktadır arkeolojik kazılar ve tarihsel belgeler sayesinde kaybolmuş kültürlerin gizemleri birer birer gün yüzüne çıkmaktadır bu kültürel mirasın korunması ve gelecek nesillere aktarılması insanlık tarihine duyulan saygının en somut göstergesidir"
 
-    selected_text = mock_text_2 if round == 2 else mock_text_1
+    if round == 3:
+        selected_text = mock_text_3
+    elif round == 2:
+        selected_text = mock_text_2
+    else:
+        selected_text = mock_text_1
     
     logging.info(f"Mock data döndürülüyor (Round: {round})")
     return {"text": selected_text}
@@ -136,6 +142,38 @@ async def login_user(data: LoginRequest):
                 "status": "error",
                 "message": f"Kullanıcı '{data.username}' bulunamadı. Lütfen önce kayıt olun."
             }
+
+        from app.services import check_physiological_validity
+        physio_check = check_physiological_validity(data.keystrokes)
+        if not physio_check["valid"]:
+             logging.warning("Physiological check failed for %s: %s", data.username, physio_check["reason"])
+             return {
+                 "status": "error",
+                 "message": f"Doğrulama reddedildi: {physio_check['reason']}"
+             }
+
+        target_text = data.metadata.target_text if data.metadata else ""
+        if target_text:
+            from app.services import reconstruct_text_from_keystrokes, calculate_text_similarity
+            
+            typed_text = reconstruct_text_from_keystrokes(data.keystrokes)
+            similarity = calculate_text_similarity(typed_text.lower(), target_text.lower())
+            
+            logging.info("Text Validation -> Target: '%s'...", target_text[:20])
+            logging.info("Text Validation -> Typed:  '%s'...", typed_text[:20])
+            logging.info("Text Validation -> Similarity: %.2f%%", similarity * 100)
+            
+            # Threshold: 60% (Allow some typos, but not completely wrong text)
+            if similarity < 0.60:
+                logging.warning("Text similarity too low for %s: %.2f", data.username, similarity)
+                return {
+                    "status": "error",
+                    "message": f"Girdiğiniz metin, doğrulama metni ile eşleşmiyor (Benzerlik: %{int(similarity*100)}). Lütfen ekrandaki metni doğru yazın.",
+                    "letter_error_summary": summarize_letter_errors(extract_keystroke_features(data.keystrokes))
+                }
+        else:
+            logging.warning("No target text provided in metadata for %s. Skipping text validation.", data.username)
+
 
         loaded_model = load_model()
 
@@ -202,7 +240,7 @@ async def login_user(data: LoginRequest):
 
         confidence = max(0.0, min(1.0, raw_output))
         logging.info("Model raw output: %.8f, Confidence: %.8f (%.4f%%)", raw_output, confidence, confidence * 100)
-        THRESHOLD = 0.75
+        THRESHOLD = 0.50
 
         if confidence >= THRESHOLD:
             logging.info("Başarılı giriş (Model): %s (güven: %.2f)", data.username, confidence)
@@ -226,7 +264,7 @@ async def login_user(data: LoginRequest):
                 max_age=SESSION_MAX_AGE,
                 httponly=True,
                 samesite="lax",
-                secure=False  
+                secure=os.getenv("IS_PRODUCTION", "false").lower() == "true"
             )
             return response
 
@@ -242,8 +280,10 @@ async def login_user(data: LoginRequest):
         }
 
     except Exception as exc: 
+        import traceback
+        traceback.print_exc()
         logging.error("Login hatası: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Doğrulama hatası: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Doğrulama hatası: {str(exc)}") from exc
 
 
 @router.get("/api/user-stats")
@@ -282,9 +322,47 @@ async def register_user(data: RegisterRequest, background_tasks: BackgroundTasks
         user_dir = DATA_DIR / data.username
         user_dir.mkdir(exist_ok=True)
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         
+        # Validate all provided keystroke sets
+        from app.services import check_physiological_validity, reconstruct_text_from_keystrokes, calculate_text_similarity
+
+        def validate_set(k_data, meta_data, step_name):
+            if not k_data: return
+            
+            # 1. Physio Check
+            physio = check_physiological_validity(k_data)
+            if not physio["valid"]:
+                raise HTTPException(status_code=400, detail=f"{step_name} hatası: {physio['reason']}")
+
+            # 2. Text Check
+            if meta_data and meta_data.target_text:
+                typed = reconstruct_text_from_keystrokes(k_data)
+                # Case-insensitive comparison for robustness
+                sim = calculate_text_similarity(typed.lower(), meta_data.target_text.lower())
+                
+                # Length Validation (FAILSAFE)
+                len_typed = len(typed)
+                len_target = len(meta_data.target_text)
+                len_ratio = min(len_typed, len_target) / max(len_typed, len_target) if max(len_typed, len_target) > 0 else 0
+
+                # Strict Validation: Must have at least 60% similarity
+                # We ignore length ratio for approval, as garbage text can have perfect length ratio.
+                if sim < 0.60:
+                     logging.error(f"Validation Failed: Similarity {sim:.2f} < 0.60")
+                     logging.error(f"Target: {meta_data.target_text[:50]}")
+                     logging.error(f"Typed:  {typed[:50]}")
+
+                     raise HTTPException(
+                         status_code=400, 
+                         detail=f"{step_name} metni eşleşmiyor (Benzerlik: %{int(sim*100)}). Lütfen ekrandaki metni doğru yazın."
+                     )
+
+        validate_set(data.keystrokes, data.metadata, "Adım 1")
+        if data.keystrokes_2: validate_set(data.keystrokes_2, data.metadata_2, "Adım 2")
+        if data.keystrokes_3: validate_set(data.keystrokes_3, data.metadata_3, "Adım 3")
+
         def calculate_metadata(keystrokes, features, provided_metadata=None):
             if provided_metadata:
                 return provided_metadata.dict()
@@ -295,54 +373,80 @@ async def register_user(data: RegisterRequest, background_tasks: BackgroundTasks
                 "total_keys": len(keystrokes)
             }
 
-        features_1 = extract_keystroke_features(data.keystrokes)
-        letter_summary_1 = summarize_letter_errors(features_1)
-        session_metadata_1 = calculate_metadata(data.keystrokes, features_1, data.metadata)
+        # --- REFACTOR: Save EACH Step as a Separate Session File ---
+        saved_files = []
+        features_list = []
         
-        features_list = [features_1]
-        
-        features_2 = None
-        letter_summary_2 = None
-        session_metadata_2 = None
-        
-        if data.keystrokes_2:
-            features_2 = extract_keystroke_features(data.keystrokes_2)
-            letter_summary_2 = summarize_letter_errors(features_2)
-            session_metadata_2 = calculate_metadata(data.keystrokes_2, features_2, data.metadata_2)
-            features_list.append(features_2)
-        
-        raw_data = {
-            "username": data.username,
-            "email": data.email,
-            "timestamp": timestamp,
-            "session_type": "register",
-            "success": True,
-            "total_keystrokes": len(data.keystrokes),
-            "keystrokes": [k.dict() for k in data.keystrokes],
-            "session_metadata": session_metadata_1,
-            "letter_error_summary": letter_summary_1
-        }
-        
-        if data.keystrokes_2:
-            raw_data.update({
-                "total_keystrokes_2": len(data.keystrokes_2),
-                "keystrokes_2": [k.dict() for k in data.keystrokes_2],
-                "session_metadata_2": session_metadata_2,
-                "letter_error_summary_2": letter_summary_2
-            })
+        # Prepare iterable for steps
+        steps = [
+            (data.keystrokes, data.metadata, 1),
+            (data.keystrokes_2, data.metadata_2, 2),
+            (data.keystrokes_3, data.metadata_3, 3)
+        ]
 
-        raw_data_file = user_dir / f"raw_data_{timestamp}.json"
-        with open(raw_data_file, "w", encoding="utf-8") as file:
-            json.dump(raw_data, file, indent=2, ensure_ascii=False)
+        count_msg = ""
 
-        features_file = user_dir / f"features_{timestamp}.csv"
-        save_features_to_csv(features_list, features_file, data.username)
+        for ks, meta, step_num in steps:
+            if not ks: continue
+            
+            try:
+                # 1. Feature Extraction
+                features = extract_keystroke_features(ks)
+                letter_summary = summarize_letter_errors(features)
+                
+                # Check data type of ks elements
+                if len(ks) > 0 and isinstance(ks[0], dict):
+                     logging.warning("Keystrokes are dicts, not objects! This might cause AttributeError or KeyError.")
 
-        count_msg = f"{len(data.keystrokes)}"
-        if data.keystrokes_2:
-            count_msg += f" + {len(data.keystrokes_2)}"
+                session_metadata = calculate_metadata(ks, features, meta)
+                features_list.append(features)
+                
+                # 2. Prepare JSON Payload for this Step
+                step_file_name = f"raw_data_{base_timestamp}_register_s{step_num}.json"
+                
+                raw_data = {
+                    "username": data.username,
+                    "email": data.email,
+                    "timestamp": base_timestamp, # Main group timestamp
+                    "step_timestamp": datetime.now().isoformat(), # Exact write time
+                    "session_type": "register",
+                    "step_number": step_num,
+                    "success": True,
+                    "total_keystrokes": len(ks),
+                    "keystrokes": [k.dict() for k in ks],
+                    "session_metadata": session_metadata,
+                    "letter_error_summary": letter_summary
+                }
 
-        logging.info("%s için veri kaydedildi: %s tuş vuruşu", data.username, count_msg)
+                # 3. Write JSON File
+                file_path = user_dir / step_file_name
+                with open(file_path, "w", encoding="utf-8") as file:
+                    json.dump(raw_data, file, indent=2, ensure_ascii=False)
+                
+                saved_files.append(str(file_path))
+                
+                # Log info
+                count_msg += f" + {len(ks)}" if count_msg else f"{len(ks)}"
+
+            except KeyError as ke:
+                logging.error(f"KeyError in step {step_num}: {ke}")
+                import traceback
+                logging.error(traceback.format_exc())
+                raise HTTPException(status_code=500, detail=f"Veri işleme hatası (Adım {step_num}): {ke}")
+            except Exception as e:
+                logging.error(f"Error in step {step_num}: {e}")
+                raise HTTPException(status_code=500, detail=f"Adım {step_num} hatası: {e}")
+
+        # 4. Save Aggregated Features to CSV (One row per step/session)
+        try:
+            features_file = user_dir / f"features_{base_timestamp}.csv"
+            save_features_to_csv(features_list, features_file, data.username)
+        except Exception as e:
+            logging.error(f"CSV Save Error: {e}")
+            raise HTTPException(status_code=500, detail=f"CSV kaydetme hatası: {e}")
+
+
+        logging.info("%s için 'Session Isolation' verisi kaydedildi: %s tuş vuruşu", data.username, count_msg)
         
         # Trigger training in background
         background_tasks.add_task(train_model)
@@ -350,14 +454,24 @@ async def register_user(data: RegisterRequest, background_tasks: BackgroundTasks
 
         return {
             "status": "success",
-            "message": "Kayıt ve Biyometrik Veri (2 Set) Alındı" if data.keystrokes_2 else "Kayıt ve Biyometrik Veri Alındı",
+            "message": "Kayıt Başarılı. Her adım ayrı bir oturum dosyası olarak kaydedildi.",
             "username": data.username,
-            "keystroke_count": len(data.keystrokes),
-            "files_saved": [str(raw_data_file), str(features_file)],
-            "letter_error_summary": letter_summary_1
+            "main_timestamp": base_timestamp,
+            "files_created": len(saved_files),
+            "files_saved": saved_files
         }
 
     except Exception as exc:  
         logging.error("Veri kaydetme hatası: %s", exc)
         raise HTTPException(status_code=500, detail=f"Veri kaydedilemedi: {exc}") from exc
 
+
+@router.post("/api/debug/train")
+async def trigger_manual_training(background_tasks: BackgroundTasks):
+    """
+    Manually triggers the model training pipeline.
+    Useful for debugging and optimization verification.
+    """
+    from app.training import train_model
+    background_tasks.add_task(train_model)
+    return {"status": "success", "message": "Training started in background"}
